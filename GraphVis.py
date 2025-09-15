@@ -1,6 +1,6 @@
 import pygame as pg
 
-from HyperGraph import *
+from TwinGraph import *
 from Euclid import *
 
 class GraphVis:
@@ -15,7 +15,7 @@ class GraphVis:
         green = (100,255,100)
         blue = (100,100,255)
 
-    def __init__(self, graph: HyperGraph) -> None:
+    def __init__(self, graph: TwinGraph) -> None:
         # Graph
         self.graph = graph
 
@@ -44,19 +44,15 @@ class GraphVis:
 
             # Draw edges
             for vert in self.graph.primalVerts:
-                for edge in vert.counterclockwiseEdges:
+                for edge in vert.cc_edges:
                     dest, dir = edge.getPrimalDestFrom(vert)
-                    if dir == HyperGraph.EdgeDir.AB:
+                    if dir == TwinGraph.EdgeDir.AB: # Only draw one side of the graph to avoid redundancy
                         src = self.point_graph_to_window(vert.point)
                         dest = self.point_graph_to_window(dest.point)
                         pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
 
-            # Draw Vertices
-            # for vert in self.graph.primalVerts:
-            #     pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(vert.point).tuple(), 2)
-
             # Draw Close Vertices
-            closest_vert = graph.get_closest_vert(g_mp, HyperGraph.VertRole.PRIMAL)
+            closest_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.PRIMAL)
             pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(closest_vert.point).tuple(), 5)
 
             # Push to screen

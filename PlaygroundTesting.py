@@ -1,5 +1,5 @@
 from Euclid import *
-from HyperGraph import *
+from TwinGraph import *
 from GraphVis import *
 
 def generate_grid_graph(width: int, height: int) -> ([Point], [float], [(int, int)]):
@@ -20,6 +20,6 @@ def generate_grid_graph(width: int, height: int) -> ([Point], [float], [(int, in
     return points, weights, edgeIdxs
 
 points, weights, edge_idxs = generate_grid_graph(25,25)
-graph = HyperGraph(points, weights, edge_idxs)
+graph = TwinGraph(points, weights, edge_idxs)
 
 GraphVis(graph)

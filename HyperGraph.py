@@ -1,11 +1,15 @@
 from __future__ import annotations
+
+from collections import deque
+import bisect
+
 from enum import Enum
 from Euclid import *
 
-class HyperGraph:
-    primalVerts: set(HyperGraph.HyperVert)
-    dualVerts: set(HyperGraph.HyperVert)
-    edges: set(HyperGraph.HyperEdge)
+class TwinGraph:
+    primalVerts: set(TwinGraph.Vert)
+    dualVerts: set(TwinGraph.Vert)
+    edges: set(TwinGraph.HyperEdge)
 
     lowerXBound: float
     upperXBound: float
@@ -13,15 +17,19 @@ class HyperGraph:
     upperYBound: float
 
     spatial_lookup_res: float
-    spatial_lookup_ref: list[list[HyperGraph.HyperVert]] # Indexing on x and then y
+    spatial_lookup_ref: [[TwinGraph.Vert]] # Indexing on x and then y
+
+    animating: bool
+    animation_frame: int
+    animation_track: [[(TwinGraph.HyperEdge, TwinGraph.VertRole, TwinGraph.EdgeDir)]]
 
     def __init__(self, points: [Point], weights: [float], edgeIdxs: [(int,int)]) -> None:
         assert len(points) == len(weights)
         zippedPointWeights = zip(points, weights)
 
         # Create key data structures
-        self.primalVerts = [HyperGraph.HyperVert(point, weight, HyperGraph.VertRole.PRIMAL) for point, weight in zippedPointWeights]
-        self.edges = [HyperGraph.HyperEdge(self.primalVerts[idxA], self.primalVerts[idxB]) for idxA, idxB in edgeIdxs]
+        self.primalVerts = [TwinGraph.Vert(point, weight, TwinGraph.VertRole.PRIMAL) for point, weight in zippedPointWeights]
+        self.edges = [TwinGraph.HyperEdge(self.primalVerts[idxA], self.primalVerts[idxB]) for idxA, idxB in edgeIdxs]
 
         # Note bounds
         self.lowerXBound = min(points, key=lambda a: a.x).x
@@ -32,8 +40,8 @@ class HyperGraph:
         # Register edges with vertices
         vertEdgeDict = {}
         for edge in self.edges:
-            vertA = edge.primalA
-            vertB = edge.primalB
+            vertA = edge.primal_A
+            vertB = edge.primal_B
             if vertA not in vertEdgeDict:
                 vertEdgeDict[vertA] = []
             if vertB not in vertEdgeDict:
@@ -43,15 +51,50 @@ class HyperGraph:
         for vert, vertEdges in vertEdgeDict.items():
             vert.addEdges(vertEdges)
 
+        # Aux Data
+        # Animation
+        self.animating = True
+        self.animation_frame = 0
+        self.animation_track = []
+
         # Construct dual graph
         # faceRoot = self.primalVerts[0]
             
     def construct_dual(self) -> None:
-        consumed_edges_AB: set(HyperGraph.HyperEdge) = set()
-        consumed_edges_BA: set(HyperGraph.HyperEdge) = set()
+        vert_next_outgoing_edge: {TwinGraph.Vert: int} = {}
+        edge_deque: deque((TwinGraph.HyperEdge, TwinGraph.EdgeDir)) = deque()
+        consumed_edges_AB: set(TwinGraph.HyperEdge) = set()
+        consumed_edges_BA: set(TwinGraph.HyperEdge) = set()
+
+        edge_deque.append(next(iter(self.edges, TwinGraph.EdgeDir.AB)))
+
+        while len(edge_deque) > 0:
+            edge, _ = edge_deque.popleft()
+            self.construct_face_loop(
+                edge, 
+                dir, 
+                edge_deque, 
+                vert_next_outgoing_edge, 
+                consumed_edges_AB, 
+                consumed_edges_BA
+            )
+
+    def construct_face_loop(
+            self,
+            src_edge: TwinGraph.HyperEdge,
+            src_dir: TwinGraph.EdgeDir,
+            edge_deque: deque((TwinGraph.HyperEdge, TwinGraph.EdgeDir)),
+            vert_next_outgoing_edge: {TwinGraph.Vert: int},
+            consumed_edges_AB: set(TwinGraph.HyperEdge),
+            consumed_edges_BA: set(TwinGraph.HyperEdge)):
         
-        face_root = self.primalVerts[0]
-        total_angle = 0
+        edges: [TwinGraph.HyperEdge] = []
+        
+        origin_vert, _ = src_edge.get_primal_vert_pair(src_dir)
+
+        current_edge: TwinGraph.HyperEdge = src_edge
+        while True:
+            pass
 
     def generate_spatial_lookup(self, resolution: float) -> None:
         self.spatial_lookup_res = resolution
@@ -67,7 +110,7 @@ class HyperGraph:
 
             self.spatial_lookup_ref[x_idx][y_idx].append(vert)
 
-    def get_verts_within_radius(self, src: Point, radius: float, role: HyperGraph.VertRole) -> [HyperGraph.HyperVert]:
+    def get_verts_within_radius(self, src: Point, radius: float, role: TwinGraph.VertRole) -> [TwinGraph.Vert]:
         matches = []
 
         # TODO: Integrate spatial lookup
@@ -82,7 +125,7 @@ class HyperGraph:
 
         return matches
 
-    def get_closest_vert(self, src: Point, role: HyperGraph.VertRole) -> [HyperGraph.HyperVert]:
+    def get_closest_vert(self, src: Point, role: TwinGraph.VertRole) -> [TwinGraph.Vert]:
         for radius in range(max(self.upperXBound - self.lowerXBound, self.upperYBound - self.lowerYBound)):
             close = self.get_verts_within_radius(src, radius, role)
             if len(close) > 0:
@@ -103,75 +146,105 @@ class HyperGraph:
         def is_dual(self) -> bool:
             return self.value < 0
 
-    class EdgeDir(Enum):
-        AB = 1
-        BA = -1
-
-        def op(self) -> HyperGraph.EdgeDir:
-            return HyperGraph.EdgeDir(-self.value)
-
-    class HyperVert:
+    class Vert:
         point: Point
         weight: float
-        role: HyperGraph.VertRole
-        counterclockwiseEdges: [HyperGraph.HyperEdge]
+        role: TwinGraph.VertRole
+        cc_edges: [TwinGraph.HyperEdge]
 
-        def __init__(self, point: point, weight: float, role: HyperGraph.VertRole) -> None:
+        def __init__(self, point: point, weight: float, role: TwinGraph.VertRole) -> None:
             self.point = point
             self.weight = weight
             self.role = role
-            self.clockwiseEdges = []
+            self.cc_edges = []
 
-        def addEdges(self, edges: [HyperGraph.HyperEdge]) -> None:
+        # Counterclockwise edges must be sorted
+        def __init__(self, point: point, weight: float, role: TwinGraph.VertRole, counterclockwiseEdges: [TwinGraph.HyperEdge]) -> None:
+            self.point = point
+            self.weight = weight
+            self.role = role
+            self.cc_edges = counterclockwiseEdges
+
+        def addEdges(self, edges: [TwinGraph.HyperEdge]) -> None:
             edges = self.clockwiseEdges + edges
             if self.role.is_primal():
                 edges.sort(key=lambda edge: edge.getPrimalRadFrom(self)[0])
             if self.role.is_dual():
                 edges.sort(key=lambda edge: edge.getDualRadFrom(self)[0])
 
-            self.counterclockwiseEdges = edges
+            for i, edge in enumerate(edges):
+                if self.role.is_primal():
+                    edges.sort(key=lambda edge: edge.getPrimalRadFrom(self)[0])
+                if self.role.is_dual():
+                    edges.sort(key=lambda edge: edge.getDualRadFrom(self)[0])
+            self.cc_edges = edges
+
+    class DirectedEdge:
+        src: TwinGraph.Vert
+        dest: TwinGraph.Vert
 
     # HyperEdge contains both primal and dual edge info
     class HyperEdge:
-        primalA: HyperGraph.HyperVert
-        primalB: HyperGraph.HyperVert
-        primalAnnotation: int
-        dualA: HyperGraph.HyperVert
-        dualB: HyperGraph.HyperVert
-        dualAnnotation: int
+        primal_A: TwinGraph.Vert
+        primal_B: TwinGraph.Vert
+        primal_annotation: int
+        primal_A_cc_next: TwinGraph.HyperEdge
+        primal_A_cc_prev: TwinGraph.HyperEdge
+        primal_B_cc_next: TwinGraph.HyperEdge
+        primal_B_cc_prev: TwinGraph.HyperEdge
+
+        dual_A: TwinGraph.Vert
+        dual_B: TwinGraph.Vert
+        dual_annotation: int
+        dual_A_cc_next: TwinGraph.HyperEdge
+        dual_A_cc_prev: TwinGraph.HyperEdge
+        dual_B_cc_next: TwinGraph.HyperEdge
+        dual_B_cc_prev: TwinGraph.HyperEdge
 
         def __init__(
                 self,
-                primalA: HyperGraph.HyperVert,
-                primalB: HyperGraph.HyperVert
+                primal_A: TwinGraph.Vert,
+                primal_B: TwinGraph.Vert
             ) -> None:
-            self.primalA = primalA
-            self.primalB = primalB
-            self.primalAnnotation = None
-            self.dualAB = None
-            self.dualBA = None
-            self.dualAnnotation = None
+            self.primal_A = primal_A
+            self.primal_B = primal_B
+            self.primal_annotation = None
+            self.dual_AB = None
+            self.dual_BA = None
+            self.dual_annotation = None
+
+        # Get the ordered ends of an edge based on an edge direction
+        def get_primal_vert_pair(self, dir: TwinGraph.EdgeDir) -> (TwinGraph.Vert, TwinGraph.Vert):
+            if dir == TwinGraph.EdgeDir.AB:
+                return (self.primal_A, self.primal_B)
+            if dir == TwinGraph.EdgeDir.BA:
+                return (self.primal_B, self.primal_A)
+        def get_dual_vert_pair(self, dir: TwinGraph.EdgeDir) -> (TwinGraph.Vert, TwinGraph.Vert):
+            if dir == TwinGraph.EdgeDir.AB:
+                return (self.dual_A, self.dual_B)
+            if dir == TwinGraph.EdgeDir.BA:
+                return (self.dual_B, self.dual_A)
 
         # Get the vertex on the other end of an edge along with directional annotation
-        def getPrimalDestFrom(self, src: HyperGraph.HyperVert) -> (HyperGraph.HyperVert, HyperGraph.EdgeDir):
-            if src == self.primalA:
-                return (self.primalB, HyperGraph.EdgeDir.AB)
-            elif src == self.primalB:
-                return (self.primalA, HyperGraph.EdgeDir.BA)
+        def getPrimalDestFrom(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, TwinGraph.EdgeDir):
+            if src == self.primal_A:
+                return (self.primal_B, TwinGraph.EdgeDir.AB)
+            elif src == self.primal_B:
+                return (self.primal_A, TwinGraph.EdgeDir.BA)
             else:
                 raise KeyError("Src for getPrimalDestFrom is not on edge.")
-        def getDualDestFrom(self, src: HyperGraph.HyperVert) -> (HyperGraph.HyperVert, HyperGraph.EdgeDir):
-            if src == self.dualA:
-                return (self.dualB, HyperGraph.EdgeDir.AB)
-            elif src == self.dualB:
-                return (self.dualA, HyperGraph.EdgeDir.BA)
+        def getDualDestFrom(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, TwinGraph.EdgeDir):
+            if src == self.dual_A:
+                return (self.dual_B, TwinGraph.EdgeDir.AB)
+            elif src == self.dual_B:
+                return (self.dual_A, TwinGraph.EdgeDir.BA)
             else:
                 raise KeyError("Src for getDualDestFrom is not on edge.")
 
         # Get the angle to the vertex on the other end of an edge along with directional annotation  
-        def getPrimalRadFrom(self, src: HyperGraph.HyperVert) -> (HyperGraph.HyperVert, float):
+        def getPrimalRadFrom(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, float):
             dest, dir = self.getPrimalDestFrom(src)
             return (Point.srcDestRad(src.point, dest.point), dir)
-        def getDualRadFrom(self, src: HyperGraph.HyperVert) -> (HyperGraph.HyperVert, float):
+        def getDualRadFrom(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, float):
             dest, dir = self.getDualDestFrom(src)
             return (Point.srcDestRad(src.point, dest.point), dir)
