@@ -179,9 +179,35 @@ class TwinGraph:
                     edges.sort(key=lambda edge: edge.getDualRadFrom(self)[0])
             self.cc_edges = edges
 
+    class EdgePair:
+        edge: TwinGraph.DirectedEdge
+
+    class EdgeNexus:
+        primal_A: TwinGraph.DirectedEdge
+        primal_B: TwinGraph.DirectedEdge
+        dual_A: TwinGraph.DirectedEdge
+        dual_B: TwinGraph.DirectedEdge
+
     class DirectedEdge:
         src: TwinGraph.Vert
         dest: TwinGraph.Vert
+        nexus: TwinGraph.EdgeNexus
+        annotation: int
+
+        src_cc_prev: TwinGraph.DirectedEdge
+        src_cc_next: TwinGraph.DirectedEdge
+        prev_cc_prev: TwinGraph.DirectedEdge
+        prev_cc_next: TwinGraph.DirectedEdge
+
+        def __init__(self, src: TwinGraph.Vert, dest: TwinGraph.Vert):
+            self.src = src
+            self.dest = dest
+
+            self.annotation = None
+            self.src_cc_prev = None
+            self.src_cc_next = None
+            self.dest_cc_prev = None
+            self.dest_cc_next = None
 
     # HyperEdge contains both primal and dual edge info
     class HyperEdge:
