@@ -30,7 +30,8 @@ class TwinGraph:
         ordered_primal_verts = [TwinGraph.Vert(point, weight, TwinGraph.VertRole.PRIMAL) for point, weight in zippedPointWeights]
 
         self.primalVerts = set(ordered_primal_verts)
-        self.edges = {TwinGraph.QuadEdge(ordered_primal_verts[idxA], ordered_primal_verts[idxB]) for idxA, idxB in edgeIdxs}
+        self.dualVerts = set()
+        self.edges = {TwinGraph.QuadEdge(ordered_primal_verts[idxA], ordered_primal_verts[idxB]) for idxA, idxB in edgeIdxs} # Link verts at index pairs from edgeIdxs
 
         # Note bounds
         self.lowerXBound = min(points, key=lambda a: a.x).x
@@ -80,6 +81,11 @@ class TwinGraph:
                 edges_AB, 
                 edges_BA
             )
+        # TODO: Confirm generation of self-edges
+            
+        # NOTE: Adds multiplicative factore O(n d logd) where d = max degree
+        for dual_vert in self.dualVerts:
+            dual_vert.register_edges([]) # Triggers re-sort and link
 
     def construct_face_loop(
             self,
@@ -88,7 +94,13 @@ class TwinGraph:
             edges_AB: set(TwinGraph.QuadEdge),
             edges_BA: set(TwinGraph.QuadEdge)):
 
+        # Dual Vert
+        dual_vert = TwinGraph.Vert(Point(0,0), 0, TwinGraph.VertRole.DUAL)
+
+        # Info for new vert
         loop_edges: [TwinGraph.QuadEdge] = []
+        x_centroid_avg: float = 0
+        y_centroid_avg: float = 0
         
         # Record vertex for face loop completion and load starting vert and edge (with dir)
         root_vert, current_vert = src_edge.get_primal_vert_pair(src_dir)
@@ -96,6 +108,7 @@ class TwinGraph:
         current_dir: TwinGraph.EdgeDir = src_dir
 
         # Process edges
+        idx = 1
         while True:
             # Record consumed edge
             if current_dir == TwinGraph.EdgeDir.AB:
@@ -103,6 +116,16 @@ class TwinGraph:
             if current_dir == TwinGraph.EdgeDir.BA:
                 edges_BA.remove(current_edge)
             loop_edges.append(current_edge)
+
+            # Link edges to dual vert
+            if current_dir == TwinGraph.EdgeDir.AB:
+                current_edge.dual_AB = dual_vert
+            if current_dir == TwinGraph.EdgeDir.BA:
+                current_edge.dual_BA = dual_vert
+
+            # Update centroid averages
+            x_centroid_avg = x_centroid_avg + (current_vert.point.x - x_centroid_avg) / idx
+            y_centroid_avg = y_centroid_avg + (current_vert.point.y - y_centroid_avg) / idx
 
             # Append list of all edges so far processed
             if self.animating:
@@ -115,6 +138,14 @@ class TwinGraph:
             # Get next edge and vert
             current_edge, _ = current_edge.get_primal_cc_next_edge(current_vert) # Gets next edge proceeding counter-clockwise
             current_vert, current_dir = current_edge.get_primal_dest_from(current_vert)
+
+            # Idx Update
+            idx += 1
+        
+        # Set Dual Vert Centroid and Edges
+        dual_vert.point = Point(x_centroid_avg, y_centroid_avg)
+        dual_vert.cc_edges = loop_edges # Dual edges do not necessarily have their other end at thsi point, so they cannot be sorted until the dual is built
+        self.dualVerts.add(dual_vert)
 
     def generate_spatial_lookup(self, resolution: float) -> None:
         self.spatial_lookup_res = resolution
@@ -187,7 +218,7 @@ class TwinGraph:
         # Edges must already have links to calling vertex
         def register_edges(self, edges: [TwinGraph.QuadEdge]) -> None:
             # TODO: Add assert for edge linking
-            edges = self.cc_edges + edges
+            edges = self.cc_edges + edges # TODO: Sorted insertion would be faster than re-sorting all
             if self.role.is_primal():
                 edges.sort(key=lambda edge: edge.get_primal_rad_from(self)[0])
             if self.role.is_dual():

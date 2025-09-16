@@ -29,13 +29,35 @@ class GraphVis:
         # Loop State
         loop_idx = 0
         animation_frame = 0
+        animation_paused = False
+        displaying_primal = True
+        displaying_dual = False
 
         # Loop
         exitCondition = False
         while not exitCondition:
+            # Key / System Input
+            # Quitting / Toggles
             for event in pg.event.get():
                 if event.type == pg.QUIT:
                     exitCondition = True
+                if event.type == pg.KEYDOWN:
+                    if event.key == pg.K_SPACE:
+                        animation_paused = not animation_paused
+                    if event.key == pg.K_p:
+                        displaying_primal = not displaying_primal
+                    if event.key == pg.K_d:
+                        displaying_dual = not displaying_dual
+            # Sustained Actions
+            keys = pg.key.get_pressed()
+            if keys[pg.K_LEFT]:
+                animation_frame = animation_frame-5
+            if keys[pg.K_RIGHT]:
+                animation_frame = animation_frame+5
+            if animation_frame < 0:
+                animation_frame = len(self.graph.animation_track) + animation_frame
+            if animation_frame >= len(self.graph.animation_track):
+                animation_frame = 0
 
             # Screen Reset
             screen.fill(GraphVis.DrawColors.black)
@@ -47,9 +69,14 @@ class GraphVis:
 
             # Draw edges
             for edge in self.graph.edges.difference(set(self.graph.animation_track[animation_frame])):
-                src = self.point_graph_to_window(edge.primal_A.point)
-                dest = self.point_graph_to_window(edge.primal_B.point)
-                pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
+                if displaying_primal:
+                    src = self.point_graph_to_window(edge.primal_A.point)
+                    dest = self.point_graph_to_window(edge.primal_B.point)
+                    pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
+                if displaying_dual:
+                    src = self.point_graph_to_window(edge.dual_AB.point)
+                    dest = self.point_graph_to_window(edge.dual_BA.point)
+                    pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
 
             # Test
             for edge in self.graph.animation_track[animation_frame]:
@@ -66,7 +93,7 @@ class GraphVis:
 
             # Temporal State Updates
             loop_idx += 1
-            if loop_idx%5 == 0:
+            if loop_idx%5 == 0 and not animation_paused:
                 animation_frame += 1
                 if animation_frame >= len(self.graph.animation_track):
                     animation_frame = 0
