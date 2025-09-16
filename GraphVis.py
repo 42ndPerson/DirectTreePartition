@@ -11,7 +11,7 @@ class GraphVis:
     class DrawColors:
         black = (0,0,0)
         white = (255,255,255)
-        red = (255,100,100)
+        red = (255,50,100)
         green = (100,255,100)
         blue = (100,100,255)
 
@@ -25,6 +25,10 @@ class GraphVis:
         # Screen
         screen = pg.display.set_mode(GraphVis.window_size)
         pg.display.set_caption("Graph Viewer")
+
+        # Loop State
+        loop_idx = 0
+        animation_frame = 0
 
         # Loop
         exitCondition = False
@@ -40,16 +44,18 @@ class GraphVis:
             mx, my = pg.mouse.get_pos()
             w_mp = Point(mx, my)
             g_mp = self.point_window_to_graph(w_mp)
-            # pg.draw.circle(screen, GraphVis.DrawColors.blue, w_mp.tuple(), 5)
 
             # Draw edges
-            for vert in self.graph.primalVerts:
-                for edge in vert.cc_edges:
-                    dest, dir = edge.getPrimalDestFrom(vert)
-                    if dir == TwinGraph.EdgeDir.AB: # Only draw one side of the graph to avoid redundancy
-                        src = self.point_graph_to_window(vert.point)
-                        dest = self.point_graph_to_window(dest.point)
-                        pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
+            for edge in self.graph.edges.difference(set(self.graph.animation_track[animation_frame])):
+                src = self.point_graph_to_window(edge.primal_A.point)
+                dest = self.point_graph_to_window(edge.primal_B.point)
+                pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
+
+            # Test
+            for edge in self.graph.animation_track[animation_frame]:
+                src = self.point_graph_to_window(edge.primal_A.point)
+                dest = self.point_graph_to_window(edge.primal_B.point)
+                pg.draw.aaline(screen, GraphVis.DrawColors.red, src.tuple(), dest.tuple(), blend=10)
 
             # Draw Close Vertices
             closest_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.PRIMAL)
@@ -57,6 +63,13 @@ class GraphVis:
 
             # Push to screen
             pg.display.flip()
+
+            # Temporal State Updates
+            loop_idx += 1
+            if loop_idx%5 == 0:
+                animation_frame += 1
+                if animation_frame >= len(self.graph.animation_track):
+                    animation_frame = 0
 
         # Quit Pygame
         pg.quit()
