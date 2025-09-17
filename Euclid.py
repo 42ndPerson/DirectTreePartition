@@ -17,5 +17,5 @@ class Point:
         return math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
     
     @staticmethod
-    def srcDestRad(src: Euclid.Point, dest: Euclid.Point) -> float:
+    def src_dest_rad(src: Euclid.Point, dest: Euclid.Point) -> float:
         return math.atan2(dest.y - src.y, dest.x - src.x)

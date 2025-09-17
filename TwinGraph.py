@@ -307,10 +307,22 @@ class TwinGraph:
         # Get the angle to the vertex on the other end of an edge along with directional annotation  
         def get_primal_rad_from(self, src: TwinGraph.Vert) -> (float, TwinGraph.EdgeDir):
             dest, dir = self.get_primal_dest_from(src)
-            return (Point.srcDestRad(src.point, dest.point), dir)
+            return (Point.src_dest_rad(src.point, dest.point), dir)
         def get_dual_rad_from(self, src: TwinGraph.Vert) -> (float, TwinGraph.EdgeDir):
             dest, dir = self.get_dual_dest_from(src)
-            return (Point.srcDestRad(src.point, dest.point), dir)
+            return (Point.src_dest_rad(src.point, dest.point), dir)
+        
+        # Get the angle of the edge traveling in a given dir  
+        def get_primal_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
+            if dir == TwinGraph.EdgeDir.AB:
+                return (Point.src_dest_rad(self.primal_A.point, self.primal_B.point), dir)
+            if dir == TwinGraph.EdgeDir.BA:
+                return (Point.src_dest_rad(self.primal_B.point, self.primal_A.point), dir)
+        def get_dual_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
+            if dir == TwinGraph.EdgeDir.AB:
+                return (Point.src_dest_rad(self.dual_AB.point, self.dual_BA.point), dir)
+            if dir == TwinGraph.EdgeDir.BA:
+                return (Point.src_dest_rad(self.dual_BA.point, self.dual_AB.point), dir)
         
         # Get the cc next edge from vert
         def get_primal_cc_next_edge(self, vert: TwinGraph.Vert) -> (TwinGraph.QuadEdge, TwinGraph.EdgeDir):

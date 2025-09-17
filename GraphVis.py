@@ -68,8 +68,8 @@ class GraphVis:
             g_mp = self.point_window_to_graph(w_mp)
 
             # Draw edges
-            for edge in self.graph.edges.difference(set(self.graph.animation_track[animation_frame])):
-                if displaying_primal:
+            for edge in self.graph.edges:
+                if displaying_primal and edge in self.graph.edges.difference(set(self.graph.animation_track[animation_frame])):
                     src = self.point_graph_to_window(edge.primal_A.point)
                     dest = self.point_graph_to_window(edge.primal_B.point)
                     pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
