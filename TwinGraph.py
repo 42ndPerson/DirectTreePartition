@@ -101,6 +101,7 @@ class TwinGraph:
         loop_edges: [TwinGraph.QuadEdge] = []
         x_centroid_avg: float = 0
         y_centroid_avg: float = 0
+        total_angle: float = 0
         
         # Record vertex for face loop completion and load starting vert and edge (with dir)
         root_vert, current_vert = src_edge.get_primal_vert_pair(src_dir)
@@ -135,9 +136,12 @@ class TwinGraph:
             if current_vert == root_vert:
                 break
 
-            # Get next edge and vert
+            # Get next edge and vert and update total angle
+            prev_angle = current_edge.get_primal_rad_along(current_dir)
             current_edge, _ = current_edge.get_primal_cc_next_edge(current_vert) # Gets next edge proceeding counter-clockwise
             current_vert, current_dir = current_edge.get_primal_dest_from(current_vert)
+
+            total_angle += current_edge.get_primal_rad_along(current_dir) - prev_angle
 
             # Idx Update
             idx += 1
@@ -145,6 +149,9 @@ class TwinGraph:
         # Set Dual Vert Centroid and Edges
         dual_vert.point = Point(x_centroid_avg, y_centroid_avg)
         dual_vert.cc_edges = loop_edges # Dual edges do not necessarily have their other end at thsi point, so they cannot be sorted until the dual is built
+        # TODO: Validate reason for getting 0
+        if total_angle <= 0: # Detects counter-clockwise looping at edge of graph compared to clockwise interior looping
+            dual_vert.role = TwinGraph.VertRole.DUAL_EXTERIOR
         self.dualVerts.add(dual_vert)
 
     def generate_spatial_lookup(self, resolution: float) -> None:
@@ -250,7 +257,8 @@ class TwinGraph:
     class QuadEdge:
         primal_A: TwinGraph.Vert
         primal_B: TwinGraph.Vert
-        primal_annotation: int
+        primal_AB_annotation: int
+        primal_BA_annotation: int
         primal_A_cc_next: TwinGraph.QuadEdge
         primal_A_cc_prev: TwinGraph.QuadEdge
         primal_B_cc_next: TwinGraph.QuadEdge
@@ -258,7 +266,8 @@ class TwinGraph:
 
         dual_AB: TwinGraph.Vert
         dual_BA: TwinGraph.Vert
-        dual_annotation: int
+        dual_AB_annotation: int
+        dual_BA_annotation: int
         dual_AB_cc_next: TwinGraph.QuadEdge
         dual_AB_cc_prev: TwinGraph.QuadEdge
         dual_BA_cc_next: TwinGraph.QuadEdge
@@ -271,10 +280,12 @@ class TwinGraph:
             ) -> None:
             self.primal_A = primal_A
             self.primal_B = primal_B
-            self.primal_annotation = None
+            self.primal_AB_annotation = None
+            self.primal_BA_annotation = None
             self.dual_AB = None
             self.dual_BA = None
-            self.dual_annotation = None
+            self.dual_AB_annotation = None
+            self.dual_BA_annotation = None
 
         # Get the ordered ends of an edge based on an edge direction
         def get_primal_vert_pair(self, dir: TwinGraph.EdgeDir) -> (TwinGraph.Vert, TwinGraph.Vert):
@@ -315,14 +326,14 @@ class TwinGraph:
         # Get the angle of the edge traveling in a given dir  
         def get_primal_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
             if dir == TwinGraph.EdgeDir.AB:
-                return (Point.src_dest_rad(self.primal_A.point, self.primal_B.point), dir)
+                return Point.src_dest_rad(self.primal_A.point, self.primal_B.point)
             if dir == TwinGraph.EdgeDir.BA:
-                return (Point.src_dest_rad(self.primal_B.point, self.primal_A.point), dir)
+                return Point.src_dest_rad(self.primal_B.point, self.primal_A.point)
         def get_dual_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
             if dir == TwinGraph.EdgeDir.AB:
-                return (Point.src_dest_rad(self.dual_AB.point, self.dual_BA.point), dir)
+                return Point.src_dest_rad(self.dual_AB.point, self.dual_BA.point)
             if dir == TwinGraph.EdgeDir.BA:
-                return (Point.src_dest_rad(self.dual_BA.point, self.dual_AB.point), dir)
+                return Point.src_dest_rad(self.dual_BA.point, self.dual_AB.point)
         
         # Get the cc next edge from vert
         def get_primal_cc_next_edge(self, vert: TwinGraph.Vert) -> (TwinGraph.QuadEdge, TwinGraph.EdgeDir):

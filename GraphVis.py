@@ -32,6 +32,7 @@ class GraphVis:
         animation_paused = False
         displaying_primal = True
         displaying_dual = False
+        displaying_dual_external = True
 
         # Loop
         exitCondition = False
@@ -48,6 +49,8 @@ class GraphVis:
                         displaying_primal = not displaying_primal
                     if event.key == pg.K_d:
                         displaying_dual = not displaying_dual
+                    if event.key == pg.K_e:
+                        displaying_dual_external = not displaying_dual_external
             # Sustained Actions
             keys = pg.key.get_pressed()
             if keys[pg.K_LEFT]:
@@ -74,9 +77,12 @@ class GraphVis:
                     dest = self.point_graph_to_window(edge.primal_B.point)
                     pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
                 if displaying_dual:
-                    src = self.point_graph_to_window(edge.dual_AB.point)
-                    dest = self.point_graph_to_window(edge.dual_BA.point)
-                    pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
+                    if displaying_dual_external or (
+                            edge.dual_AB.role != TwinGraph.VertRole.DUAL_EXTERIOR and edge.dual_BA.role != TwinGraph.VertRole.DUAL_EXTERIOR
+                        ):
+                        src = self.point_graph_to_window(edge.dual_AB.point)
+                        dest = self.point_graph_to_window(edge.dual_BA.point)
+                        pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
 
             # Test
             for edge in self.graph.animation_track[animation_frame]:
