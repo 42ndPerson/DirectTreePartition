@@ -1,24 +1,26 @@
-from typing import ClassVar
+from __future__ import annotations
+from typing import List, Tuple, Set
+
 from TwinGraph import *
 
 class RegionTree:
-    verts: set(RegionTree.Vert)
-    edges: set(RegionTree.Edge)
+    verts: Set[RegionTree.Vert]
+    edges: Set[RegionTree.Edge]
 
     type EdgeDir = TwinGraph.EdgeDir
 
     def __init__(self, total_weight: float) -> None:
         self.verts = {RegionTree.Vert(total_weight)}
-        self.edges = {}
+        self.edges = set()
 
     class Vert:
         weight: float
-        cc_edges: [RegionTree.Edge]
+        cc_edges: List[RegionTree.Edge]
 
-        def __init__(self, weight: float, edges: [RegionTree.Edge]=[]) -> None:
+        def __init__(self, weight: float, edges: List[RegionTree.Edge]=[]) -> None:
             self.weight = weight
 
-        def register_edges(self, edges: [RegionTree.Edge]) -> None:
+        def register_edges(self, edges: List[RegionTree.Edge]) -> None:
             # TODO: Add assert for edge linking
             edges = self.cc_edges + edges # TODO: Sorted insertion would be faster than re-sorting all
             edges.sort(key=lambda edge: edge.get_rad_from(self)[0])
@@ -33,7 +35,7 @@ class RegionTree:
         twin_graph_edge: TwinGraph.QuadEdge
 
         # Get the vertex on the other end of an edge along with directional annotation
-        def get_dest_from(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, TwinGraph.EdgeDir):
+        def get_dest_from(self, src: TwinGraph.Vert) -> Tuple[TwinGraph.Vert, TwinGraph.EdgeDir]:
             if src == self.end_A:
                 return (self.end_B, TwinGraph.EdgeDir.AB)
             elif src == self.end_B:
@@ -42,6 +44,6 @@ class RegionTree:
                 raise KeyError("Src for get_primal_dest_from is not on edge.")
 
         # Get the angle to the vertex on the other end of an edge along with directional annotation  
-        def get_rad_from(self, src: TwinGraph.Vert) -> (float, TwinGraph.EdgeDir):
+        def get_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]:
             _, dir = self.get_dest_from(src)
             return (self.twin_graph_edge.get_primal_rad_along(dir), dir)

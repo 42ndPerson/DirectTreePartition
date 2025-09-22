@@ -1,28 +1,29 @@
 from __future__ import annotations
+from typing import List, Tuple, Set, Optional
 
 from collections import deque
-import bisect
+#import bisect
 
 from enum import Enum
 from Euclid import *
 
 class TwinGraph:
-    primalVerts: set(TwinGraph.Vert)
-    dualVerts: set(TwinGraph.Vert)
-    edges: set(TwinGraph.QuadEdge)
+    primalVerts: Set[TwinGraph.Vert]
+    dualVerts: Set[TwinGraph.Vert]
+    edges: Set[TwinGraph.QuadEdge]
 
     lowerXBound: float
     upperXBound: float
     lowerYBound: float
     upperYBound: float
 
-    spatial_lookup_res: float
-    spatial_lookup_ref: [[TwinGraph.Vert]] # Indexing on x and then y
+    # spatial_lookup_res: float
+    # spatial_lookup_ref: List[List[TwinGraph.Vert]] # Indexing on x and then y
 
     animating: bool
-    animation_track: [[(TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir)]]
+    animation_track: List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir]]]
 
-    def __init__(self, points: [Point], weights: [float], edgeIdxs: [(int,int)]) -> None:
+    def __init__(self, points: List[Point], weights: List[float], edgeIdxs: List[Tuple[int,int]]) -> None:
         assert len(points) == len(weights)
         zippedPointWeights = zip(points, weights)
 
@@ -62,8 +63,8 @@ class TwinGraph:
         self.construct_dual()
             
     def construct_dual(self) -> None:
-        edges_AB: set(TwinGraph.QuadEdge) = set(self.edges)
-        edges_BA: set(TwinGraph.QuadEdge) = set(self.edges)
+        edges_AB: Set[TwinGraph.QuadEdge] = set(self.edges)
+        edges_BA: Set[TwinGraph.QuadEdge] = set(self.edges)
 
         while len(edges_AB) > 0:
             src_edge = next(iter(edges_AB))
@@ -91,14 +92,14 @@ class TwinGraph:
             self,
             src_edge: TwinGraph.QuadEdge,
             src_dir: TwinGraph.EdgeDir,
-            edges_AB: set(TwinGraph.QuadEdge),
-            edges_BA: set(TwinGraph.QuadEdge)):
+            edges_AB: Set[TwinGraph.QuadEdge],
+            edges_BA: Set[TwinGraph.QuadEdge]):
 
         # Dual Vert
         dual_vert = TwinGraph.Vert(Point(0,0), 0, TwinGraph.VertRole.DUAL)
 
         # Info for new vert
-        loop_edges: [TwinGraph.QuadEdge] = []
+        loop_edges: List[TwinGraph.QuadEdge] = []
         x_centroid_avg: float = 0
         y_centroid_avg: float = 0
         total_angle: float = 0
@@ -130,7 +131,12 @@ class TwinGraph:
 
             # Append list of all edges so far processed
             if self.animating:
-                self.animation_track.append(list(self.edges.difference(edges_AB) | self.edges.difference(edges_BA)))
+                # Append a list of (QuadEdge, VertRole, EdgeDir) tuples for animation tracking
+                edge_tuples = []
+                for edge in self.edges.difference(edges_AB) | self.edges.difference(edges_BA):
+                    # You may want to adjust VertRole and EdgeDir as appropriate for your animation logic
+                    edge_tuples.append((edge, TwinGraph.VertRole.PRIMAL, TwinGraph.EdgeDir.AB))
+                self.animation_track.append(edge_tuples)
 
             # Break if loop is complete
             if current_vert == root_vert:
@@ -154,21 +160,23 @@ class TwinGraph:
             dual_vert.role = TwinGraph.VertRole.DUAL_EXTERIOR
         self.dualVerts.add(dual_vert)
 
-    def generate_spatial_lookup(self, resolution: float) -> None:
-        self.spatial_lookup_res = resolution
-        self.spatial_lookup_ref = []
-        for i in range((self.upperXBound - self.lowerXBound) // self.spatial_lookup_res + 1):
-            self.spatial_lookup_ref.append([])
-            for j in range((self.upperYBound - self.lowerYBound) // self.spatial_lookup_res + 1):
-                self.spatial_lookup_ref[j].append([])
+    # def generate_spatial_lookup(self, resolution: float) -> None:
+    #     self.spatial_lookup_res = resolution
+    #     self.spatial_lookup_ref = []
+    #     x_steps = int((self.upperXBound - self.lowerXBound) // self.spatial_lookup_res + 1)
+    #     y_steps = int((self.upperYBound - self.lowerYBound) // self.spatial_lookup_res + 1)
+    #     for i in range(x_steps):
+    #         self.spatial_lookup_ref.append([])
+    #         for j in range(y_steps):
+    #             self.spatial_lookup_ref[i].append([])
 
-        for vert in self.primalVerts:
-            x_idx = vert.point.x // resolution
-            y_idx = vert.point.y // resolution
+    #     for vert in self.primalVerts:
+    #         x_idx = int(vert.point.x // resolution)
+    #         y_idx = int(vert.point.y // resolution)
 
-            self.spatial_lookup_ref[x_idx][y_idx].append(vert)
+    #         self.spatial_lookup_ref[x_idx][y_idx].append(vert)
 
-    def get_verts_within_radius(self, src: Point, radius: float, role: TwinGraph.VertRole) -> [TwinGraph.Vert]:
+    def get_verts_within_radius(self, src: Point, radius: float, role: TwinGraph.VertRole) -> List[TwinGraph.Vert]:
         matches = []
 
         # TODO: Integrate spatial lookup
@@ -183,8 +191,9 @@ class TwinGraph:
 
         return matches
 
-    def get_closest_vert(self, src: Point, role: TwinGraph.VertRole) -> [TwinGraph.Vert]:
-        for radius in range(max(self.upperXBound - self.lowerXBound, self.upperYBound - self.lowerYBound)):
+    def get_closest_vert(self, src: Point, role: TwinGraph.VertRole) -> Optional[TwinGraph.Vert]:
+        max_radius = int(max(self.upperXBound - self.lowerXBound, self.upperYBound - self.lowerYBound))
+        for radius in range(max_radius):
             close = self.get_verts_within_radius(src, radius, role)
             if len(close) > 0:
                 closest = min(close, key=lambda vert: Point.dist(src, vert.point))
@@ -211,10 +220,10 @@ class TwinGraph:
         point: Point
         weight: float
         role: TwinGraph.VertRole
-        cc_edges: [TwinGraph.QuadEdge]
+        cc_edges: List[TwinGraph.QuadEdge]
 
         # Counterclockwise edges must be sorted
-        def __init__(self, point: point, weight: float, role: TwinGraph.VertRole, counterclockwiseEdges: [TwinGraph.QuadEdge]=[]) -> None:
+        def __init__(self, point: Point, weight: float, role: TwinGraph.VertRole, counterclockwiseEdges: List[TwinGraph.QuadEdge]=[]) -> None:
             # TODO: Add assert for edge sorting
             self.point = point
             self.weight = weight
@@ -223,7 +232,7 @@ class TwinGraph:
             self.link_edges()
 
         # Edges must already have links to calling vertex
-        def register_edges(self, edges: [TwinGraph.QuadEdge]) -> None:
+        def register_edges(self, edges: List[TwinGraph.QuadEdge]) -> None:
             # TODO: Add assert for edge linking
             edges = self.cc_edges + edges # TODO: Sorted insertion would be faster than re-sorting all
             if self.role.is_primal():
@@ -257,17 +266,17 @@ class TwinGraph:
     class QuadEdge:
         primal_A: TwinGraph.Vert
         primal_B: TwinGraph.Vert
-        primal_AB_annotation: int
-        primal_BA_annotation: int
+        primal_AB_annotation: Optional[int]
+        primal_BA_annotation: Optional[int]
         primal_A_cc_next: TwinGraph.QuadEdge
         primal_A_cc_prev: TwinGraph.QuadEdge
         primal_B_cc_next: TwinGraph.QuadEdge
         primal_B_cc_prev: TwinGraph.QuadEdge
 
-        dual_AB: TwinGraph.Vert
-        dual_BA: TwinGraph.Vert
-        dual_AB_annotation: int
-        dual_BA_annotation: int
+        dual_AB: Optional[TwinGraph.Vert]
+        dual_BA: Optional[TwinGraph.Vert]
+        dual_AB_annotation: Optional[int]
+        dual_BA_annotation: Optional[int]
         dual_AB_cc_next: TwinGraph.QuadEdge
         dual_AB_cc_prev: TwinGraph.QuadEdge
         dual_BA_cc_next: TwinGraph.QuadEdge
@@ -288,38 +297,44 @@ class TwinGraph:
             self.dual_BA_annotation = None
 
         # Get the ordered ends of an edge based on an edge direction
-        def get_primal_vert_pair(self, dir: TwinGraph.EdgeDir) -> (TwinGraph.Vert, TwinGraph.Vert):
+        def get_primal_vert_pair(self, dir: TwinGraph.EdgeDir) -> Tuple[TwinGraph.Vert, TwinGraph.Vert]:
             if dir == TwinGraph.EdgeDir.AB:
                 return (self.primal_A, self.primal_B)
             if dir == TwinGraph.EdgeDir.BA:
                 return (self.primal_B, self.primal_A)
-        def get_dual_vert_pair(self, dir: TwinGraph.EdgeDir) -> (TwinGraph.Vert, TwinGraph.Vert):
+        def get_dual_vert_pair(self, dir: TwinGraph.EdgeDir) -> Tuple[TwinGraph.Vert, TwinGraph.Vert]:
+            if self.dual_AB is None or self.dual_BA is None:
+                raise ValueError("Dual edge not yet constructed.")
             if dir == TwinGraph.EdgeDir.AB:
                 return (self.dual_AB, self.dual_BA)
             if dir == TwinGraph.EdgeDir.BA:
                 return (self.dual_BA, self.dual_AB)
 
         # Get the vertex on the other end of an edge along with directional annotation
-        def get_primal_dest_from(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, TwinGraph.EdgeDir):
+        def get_primal_dest_from(self, src: TwinGraph.Vert) -> Tuple[TwinGraph.Vert, TwinGraph.EdgeDir]:
             if src == self.primal_A:
                 return (self.primal_B, TwinGraph.EdgeDir.AB)
             elif src == self.primal_B:
                 return (self.primal_A, TwinGraph.EdgeDir.BA)
             else:
                 raise KeyError("Src for get_primal_dest_from is not on edge.")
-        def get_dual_dest_from(self, src: TwinGraph.Vert) -> (TwinGraph.Vert, TwinGraph.EdgeDir):
+        def get_dual_dest_from(self, src: TwinGraph.Vert) -> Tuple[TwinGraph.Vert, TwinGraph.EdgeDir]:
             if src == self.dual_AB:
+                if self.dual_BA is None:
+                    raise ValueError("Dual edge not yet constructed.")
                 return (self.dual_BA, TwinGraph.EdgeDir.AB)
             elif src == self.dual_BA:
+                if self.dual_AB is None:
+                    raise ValueError("Dual edge not yet constructed.")
                 return (self.dual_AB, TwinGraph.EdgeDir.BA)
             else:
                 raise KeyError("Src for get_dual_dest_from is not on edge.")
 
         # Get the angle to the vertex on the other end of an edge along with directional annotation  
-        def get_primal_rad_from(self, src: TwinGraph.Vert) -> (float, TwinGraph.EdgeDir):
+        def get_primal_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]:
             dest, dir = self.get_primal_dest_from(src)
             return (Point.src_dest_rad(src.point, dest.point), dir)
-        def get_dual_rad_from(self, src: TwinGraph.Vert) -> (float, TwinGraph.EdgeDir):
+        def get_dual_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]:
             dest, dir = self.get_dual_dest_from(src)
             return (Point.src_dest_rad(src.point, dest.point), dir)
         
@@ -330,39 +345,45 @@ class TwinGraph:
             if dir == TwinGraph.EdgeDir.BA:
                 return Point.src_dest_rad(self.primal_B.point, self.primal_A.point)
         def get_dual_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
+            if self.dual_AB is None or self.dual_BA is None:
+                raise ValueError("Dual vertices not set for this edge.")
             if dir == TwinGraph.EdgeDir.AB:
                 return Point.src_dest_rad(self.dual_AB.point, self.dual_BA.point)
             if dir == TwinGraph.EdgeDir.BA:
                 return Point.src_dest_rad(self.dual_BA.point, self.dual_AB.point)
         
         # Get the cc next edge from vert
-        def get_primal_cc_next_edge(self, vert: TwinGraph.Vert) -> (TwinGraph.QuadEdge, TwinGraph.EdgeDir):
+        def get_primal_cc_next_edge(self, vert: TwinGraph.Vert) -> Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]:
             if vert == self.primal_A:
                 _, dir = self.primal_A_cc_next.get_primal_dest_from(vert)
                 return (self.primal_A_cc_next, dir)
             if vert == self.primal_B:
                 _, dir = self.primal_B_cc_next.get_primal_dest_from(vert)
                 return (self.primal_B_cc_next, dir)
-        def get_dual_cc_next_edge(self, vert: TwinGraph.Vert) -> (TwinGraph.QuadEdge, TwinGraph.EdgeDir):
+            raise KeyError("Vert for get_primal_cc_next_edge is not on edge.")
+        def get_dual_cc_next_edge(self, vert: TwinGraph.Vert) -> Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]:
             if vert == self.dual_AB:
                 _, dir = self.dual_AB_cc_next.get_dual_dest_from(vert)
                 return (self.dual_AB_cc_next, dir)
             if vert == self.dual_BA:
                 _, dir = self.dual_BA_cc_next.get_dual_dest_from(vert)
                 return (self.dual_BA_cc_next, dir)
+            raise KeyError("Vert for get_dual_cc_next_edge is not on edge.")
             
         # Get the cc prev edge from vert
-        def get_primal_cc_prev_edge(self, vert: TwinGraph.Vert) -> (TwinGraph.QuadEdge, TwinGraph.EdgeDir):
+        def get_primal_cc_prev_edge(self, vert: TwinGraph.Vert) -> Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]:
             if vert == self.primal_A:
                 _, dir = self.primal_A_cc_prev.get_primal_dest_from(vert)
                 return (self.primal_A_cc_prev, dir)
             if vert == self.primal_B:
                 _, dir = self.primal_B_cc_prev.get_primal_dest_from(vert)
                 return (self.primal_B_cc_prev, dir)
-        def get_dual_cc_prev_edge(self, vert: TwinGraph.Vert) -> (TwinGraph.QuadEdge, TwinGraph.EdgeDir):
+            raise KeyError("Vert for get_primal_cc_prev_edge is not on edge.")
+        def get_dual_cc_prev_edge(self, vert: TwinGraph.Vert) -> Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]:
             if vert == self.dual_AB:
                 _, dir = self.dual_AB_cc_prev.get_dual_dest_from(vert)
                 return (self.dual_AB_cc_prev, dir)
             if vert == self.dual_BA:
                 _, dir = self.dual_BA_cc_prev.get_dual_dest_from(vert)
                 return (self.dual_BA_cc_prev, dir)
+            raise KeyError("Vert for get_dual_cc_prev_edge is not on edge.")

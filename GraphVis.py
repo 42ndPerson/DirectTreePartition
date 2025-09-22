@@ -1,3 +1,5 @@
+from typing import List, Tuple, Set
+
 import pygame as pg
 
 from TwinGraph import *
@@ -76,23 +78,25 @@ class GraphVis:
                     src = self.point_graph_to_window(edge.primal_A.point)
                     dest = self.point_graph_to_window(edge.primal_B.point)
                     pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
-                if displaying_dual:
-                    if displaying_dual_external or (
-                            edge.dual_AB.role != TwinGraph.VertRole.DUAL_EXTERIOR and edge.dual_BA.role != TwinGraph.VertRole.DUAL_EXTERIOR
-                        ):
-                        src = self.point_graph_to_window(edge.dual_AB.point)
-                        dest = self.point_graph_to_window(edge.dual_BA.point)
-                        pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
+                if displaying_dual and edge.dual_AB is not None and edge.dual_BA is not None: # Check dual exists and should be drawn
+                    if displaying_dual_external or ( # Check whether dual edge is external and should be drawn
+                        edge.dual_AB.role != TwinGraph.VertRole.DUAL_EXTERIOR and
+                        edge.dual_BA.role != TwinGraph.VertRole.DUAL_EXTERIOR
+                    ):
+                            src = self.point_graph_to_window(edge.dual_AB.point)
+                            dest = self.point_graph_to_window(edge.dual_BA.point)
+                            pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
 
             # Test
-            for edge in self.graph.animation_track[animation_frame]:
+            for edge, _, _ in self.graph.animation_track[animation_frame]:
                 src = self.point_graph_to_window(edge.primal_A.point)
                 dest = self.point_graph_to_window(edge.primal_B.point)
                 pg.draw.aaline(screen, GraphVis.DrawColors.red, src.tuple(), dest.tuple(), blend=10)
 
             # Draw Close Vertices
             closest_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.PRIMAL)
-            pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(closest_vert.point).tuple(), 5)
+            if closest_vert is not None:
+                pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(closest_vert.point).tuple(), 5)
 
             # Push to screen
             pg.display.flip()
@@ -114,7 +118,7 @@ class GraphVis:
         transformed_coords = self.window_to_graph(point.x, point.y) 
         return Point(transformed_coords[0], transformed_coords[1])
 
-    def graph_to_window(self, graph_x: float, graph_y: float) -> (float, float):
+    def graph_to_window(self, graph_x: float, graph_y: float) -> Tuple[float, float]:
         active_window = (
             GraphVis.window_size[0] - 2*GraphVis.content_padding, 
             GraphVis.window_size[1] - 2*GraphVis.content_padding
@@ -132,7 +136,7 @@ class GraphVis:
             GraphVis.window_size[1] - GraphVis.content_padding - active_y
         )
     
-    def window_to_graph(self, window_x: float, window_y: float) -> (float, float):
+    def window_to_graph(self, window_x: float, window_y: float) -> Tuple[float, float]:
         active_window = (
             GraphVis.window_size[0] - 2*GraphVis.content_padding, 
             GraphVis.window_size[1] - 2*GraphVis.content_padding

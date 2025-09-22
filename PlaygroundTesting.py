@@ -1,8 +1,10 @@
+from typing import List, Tuple
+
 from Euclid import *
 from TwinGraph import *
 from GraphVis import *
 
-def generate_grid_graph(width: int, height: int) -> ([Point], [float], [(int, int)]):
+def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[float], List[Tuple[int, int]]]:
     points = []
     weights = []
     edgeIdxs = []
