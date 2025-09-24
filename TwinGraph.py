@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Tuple, Set, Optional
+from typing import List, Tuple, Set, Dict, Optional
 
 from collections import deque
 #import bisect
@@ -10,6 +10,7 @@ from Euclid import *
 class TwinGraph:
     primalVerts: Set[TwinGraph.Vert]
     dualVerts: Set[TwinGraph.Vert]
+    external_dual_vert: TwinGraph.Vert
     edges: Set[TwinGraph.QuadEdge]
 
     lowerXBound: float
@@ -17,11 +18,14 @@ class TwinGraph:
     lowerYBound: float
     upperYBound: float
 
+    primalMap: MapTree
+    dualMap: MapTree
+
     # spatial_lookup_res: float
     # spatial_lookup_ref: List[List[TwinGraph.Vert]] # Indexing on x and then y
 
     animating: bool
-    animation_track: List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir]]]
+    animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir]]]]
 
     def __init__(self, points: List[Point], weights: List[float], edgeIdxs: List[Tuple[int,int]]) -> None:
         assert len(points) == len(weights)
@@ -57,10 +61,14 @@ class TwinGraph:
         # Aux Data
         # Animation
         self.animating = True
-        self.animation_track = [[]]
+        self.animation_tracks = [[[]],[[]],[[]]] # [0] = dual construction, [1] = primal map tree, [2] = dual map tree
 
         # Construct dual graph
         self.construct_dual()
+
+        # Construct map trees
+        self.primalMap = self.generate_map_tree(next(iter(self.primalVerts)), TwinGraph.VertRole.PRIMAL) #TODO: Find better start vert for primal
+        self.dual = self.generate_map_tree(next(iter(self.dualVerts)), TwinGraph.VertRole.DUAL)
             
     def construct_dual(self) -> None:
         edges_AB: Set[TwinGraph.QuadEdge] = set(self.edges)
@@ -136,7 +144,7 @@ class TwinGraph:
                 for edge in self.edges.difference(edges_AB) | self.edges.difference(edges_BA):
                     # You may want to adjust VertRole and EdgeDir as appropriate for your animation logic
                     edge_tuples.append((edge, TwinGraph.VertRole.PRIMAL, TwinGraph.EdgeDir.AB))
-                self.animation_track.append(edge_tuples)
+                self.animation_tracks[0].append(edge_tuples)
 
             # Break if loop is complete
             if current_vert == root_vert:
@@ -158,23 +166,60 @@ class TwinGraph:
         # TODO: Validate reason for getting 0
         if total_angle <= 0: # Detects counter-clockwise looping at edge of graph compared to clockwise interior looping
             dual_vert.role = TwinGraph.VertRole.DUAL_EXTERIOR
+            self.external_dual_vert = dual_vert
         self.dualVerts.add(dual_vert)
 
-    # def generate_spatial_lookup(self, resolution: float) -> None:
-    #     self.spatial_lookup_res = resolution
-    #     self.spatial_lookup_ref = []
-    #     x_steps = int((self.upperXBound - self.lowerXBound) // self.spatial_lookup_res + 1)
-    #     y_steps = int((self.upperYBound - self.lowerYBound) // self.spatial_lookup_res + 1)
-    #     for i in range(x_steps):
-    #         self.spatial_lookup_ref.append([])
-    #         for j in range(y_steps):
-    #             self.spatial_lookup_ref[i].append([])
+    def generate_map_tree(self, root_vert: TwinGraph.Vert, role: TwinGraph.VertRole) -> TwinGraph.MapTree:
+        """
+        Generates a spanning tree (MapTree) over either the primal or dual graph using DFS.
+        :param root_vert: The root vertex for the tree (must be in the selected role set).
+        :param role: TwinGraph.VertRole.PRIMAL or TwinGraph.VertRole.DUAL
+        :return: TwinGraph.MapTree instance
+        """
 
-    #     for vert in self.primalVerts:
-    #         x_idx = int(vert.point.x // resolution)
-    #         y_idx = int(vert.point.y // resolution)
+        if role.is_primal():
+            verts = self.primalVerts
+            get_edges = lambda v: v.cc_edges
+            get_dest_dir = lambda e, v: e.get_primal_dest_from(v)
+        elif role.is_dual():
+            verts = self.dualVerts
+            get_edges = lambda v: v.cc_edges
+            get_dest_dir = lambda e, v: e.get_dual_dest_from(v)
+        else:
+            raise ValueError("Invalid role for map tree generation.")
 
-    #         self.spatial_lookup_ref[x_idx][y_idx].append(vert)
+        tree_verts: Set[TwinGraph.Vert] = set(verts)
+        visited_verts: Set[TwinGraph.Vert] = set()
+        visited_edges: Set[TwinGraph.QuadEdge] = set()
+        root: TwinGraph.MapTree.MapTreeVert = root_vert.map_tree_vert
+
+        def dfs(
+                parent_vert: TwinGraph.Vert, 
+                parent_tree_vert: TwinGraph.MapTree.MapTreeVert, 
+                index: int) -> int: # Returns next available index
+            visited_verts.add(parent_vert)
+            parent_tree_vert.dfs_in = index
+            index += 1
+
+            for edge in get_edges(parent_vert):
+                dest: TwinGraph.Vert
+                edge_dir: TwinGraph.EdgeDir 
+                dest, edge_dir = get_dest_dir(edge, parent_vert)
+
+                if dest not in visited_verts and dest in tree_verts:
+                    child_tree_vert: TwinGraph.MapTree.MapTreeVert = dest.map_tree_vert
+                    parent_tree_vert.add_child(child_tree_vert, edge, edge_dir)
+                    visited_edges.add(edge)
+                    if self.animating:
+                        self.animation_tracks[1 if role == TwinGraph.VertRole.PRIMAL else 2].append([(visited_edge, role, edge_dir) for visited_edge in visited_edges])
+
+                    index = dfs(dest, child_tree_vert, index)
+
+            parent_tree_vert.dfs_out = index
+            return index + 1
+
+        dfs(root_vert, root, 0)
+        return TwinGraph.MapTree(root)
 
     def get_verts_within_radius(self, src: Point, radius: float, role: TwinGraph.VertRole) -> List[TwinGraph.Vert]:
         matches = []
@@ -222,6 +267,8 @@ class TwinGraph:
         role: TwinGraph.VertRole
         cc_edges: List[TwinGraph.QuadEdge]
 
+        map_tree_vert: TwinGraph.MapTree.MapTreeVert
+
         # Counterclockwise edges must be sorted
         def __init__(self, point: Point, weight: float, role: TwinGraph.VertRole, counterclockwiseEdges: List[TwinGraph.QuadEdge]=[]) -> None:
             # TODO: Add assert for edge sorting
@@ -230,6 +277,8 @@ class TwinGraph:
             self.role = role
             self.cc_edges = counterclockwiseEdges
             self.link_edges()
+
+            self.map_tree_vert = TwinGraph.MapTree.MapTreeVert(self)
 
         # Edges must already have links to calling vertex
         def register_edges(self, edges: List[TwinGraph.QuadEdge]) -> None:
@@ -281,6 +330,8 @@ class TwinGraph:
         dual_AB_cc_prev: TwinGraph.QuadEdge
         dual_BA_cc_next: TwinGraph.QuadEdge
         dual_BA_cc_prev: TwinGraph.QuadEdge
+
+        map_tree_edge: Optional[TwinGraph.MapTree.MapTreeEdge]
 
         def __init__(
                 self,
@@ -387,3 +438,38 @@ class TwinGraph:
                 _, dir = self.dual_BA_cc_prev.get_dual_dest_from(vert)
                 return (self.dual_BA_cc_prev, dir)
             raise KeyError("Vert for get_dual_cc_prev_edge is not on edge.")
+        
+    class MapTree:
+        def __init__(self, root: MapTreeVert):
+            self.root = root
+            self.verts = set()
+            self.edges = set()
+            self._collect_tree(root)
+
+        def _collect_tree(self, vert):
+            self.verts.add(vert)
+            for edge in vert.out_edges:
+                self.edges.add(edge)
+                if edge.child not in self.verts:
+                    self._collect_tree(edge.child)
+
+        class MapTreeVert:
+            def __init__(self, twin_vert: TwinGraph.Vert):
+                self.twin_vert = twin_vert
+                self.dfs_in: int = -1
+                self.dfs_out: int = -1
+                self.out_edges: List[TwinGraph.MapTree.MapTreeEdge] = []
+                self.in_edge: Optional[TwinGraph.MapTree.MapTreeEdge] = None
+
+            def add_child(self, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir):
+                edge = TwinGraph.MapTree.MapTreeEdge(self, child, twin_edge, edge_dir)
+                self.out_edges.append(edge)
+                twin_edge.map_tree_edge = edge
+                child.in_edge = edge
+
+        class MapTreeEdge:
+            def __init__(self, parent: TwinGraph.MapTree.MapTreeVert, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir):
+                self.parent = parent
+                self.child = child
+                self.twin_edge = twin_edge
+                self.edge_dir = edge_dir

@@ -14,7 +14,7 @@ class GraphNav:
     tree_edges: Set[TwinGraph.QuadEdge]
 
     animating: bool
-    animation_track: List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir]]]
+    animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir]]]]
 
     def __init__(self, graph: TwinGraph, graph_selection: GraphSelection):
         self.graph = graph
@@ -24,7 +24,7 @@ class GraphNav:
         self.tree_edges = set()
 
         self.animating = True
-        self.animation_track = [[]]
+        self.animation_tracks = [[[]]]
 
     def loop_erased_random_walk_from(self, vert: TwinGraph.Vert):
         print("Walking")
@@ -82,7 +82,7 @@ class GraphNav:
                     (edge, self.graph_selection, TwinGraph.EdgeDir.AB)  # Replace FORWARD with actual direction if needed
                     for edge in self.tree_edges
                 ]
-                self.animation_track.append(walk_tuples + tree_tuples)
+                self.animation_tracks[0].append(walk_tuples + tree_tuples)
 
             # Check if done
             if (

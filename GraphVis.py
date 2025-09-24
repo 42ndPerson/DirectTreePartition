@@ -43,7 +43,7 @@ class GraphVis:
         animation_frame = 0
         animation_paused = False
         animation_deck_idx = 0
-        animation_deck = [self.graph.animation_track, self.graph_nav_dual.animation_track]
+        animation_deck = self.graph.animation_tracks + self.graph_nav_dual.animation_tracks
         for track in animation_deck:
             assert len(track) > 0, "Animation deck contains empty track."
 
@@ -70,7 +70,6 @@ class GraphVis:
                             animation_deck_idx = idx
                             animation_frame = 0
                     if event.key == pg.K_RETURN:
-                        print("Click")
                         selected_vert = self.graph.get_closest_vert(
                             self.point_window_to_graph(Point(*pg.mouse.get_pos())),
                             TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL
@@ -121,7 +120,7 @@ class GraphVis:
                         continue
                     src = self.point_graph_to_window(edge.dual_AB.point)
                     dest = self.point_graph_to_window(edge.dual_BA.point)
-                pg.draw.aaline(screen, GraphVis.DrawColors.red, src.tuple(), dest.tuple(), blend=10)
+                pg.draw.line(screen, GraphVis.DrawColors.red, src.tuple(), dest.tuple(), 5)
 
             # Highlight Selected Vert
             selected_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL)
