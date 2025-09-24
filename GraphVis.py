@@ -1,9 +1,10 @@
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Optional
 
 import pygame as pg
 
 from TwinGraph import *
 from Euclid import *
+from GraphNav import *
 
 class GraphVis:
     content_padding = 50
@@ -17,9 +18,12 @@ class GraphVis:
         green = (100,255,100)
         blue = (100,100,255)
 
-    def __init__(self, graph: TwinGraph) -> None:
+    def __init__(self, graph: TwinGraph, graph_nav_dual_dual: GraphNav) -> None:
         # Graph
         self.graph = graph
+
+        # GraphNav
+        self.graph_nav_dual = graph_nav_dual_dual
 
         # Init
         pg.init()
@@ -30,11 +34,18 @@ class GraphVis:
 
         # Loop State
         loop_idx = 0
-        animation_frame = 0
-        animation_paused = False
         displaying_primal = True
         displaying_dual = False
         displaying_dual_external = True
+        selected_vert: Optional[TwinGraph.Vert] = None
+
+        # Animation
+        animation_frame = 0
+        animation_paused = False
+        animation_deck_idx = 0
+        animation_deck = [self.graph.animation_track, self.graph_nav_dual.animation_track]
+        for track in animation_deck:
+            assert len(track) > 0, "Animation deck contains empty track."
 
         # Loop
         exitCondition = False
@@ -53,6 +64,19 @@ class GraphVis:
                         displaying_dual = not displaying_dual
                     if event.key == pg.K_e:
                         displaying_dual_external = not displaying_dual_external
+                    if pg.K_1 <= event.key <= pg.K_9: # Select animation track
+                        idx = event.key - pg.K_1
+                        if idx < len(animation_deck):
+                            animation_deck_idx = idx
+                            animation_frame = 0
+                    if event.key == pg.K_RETURN:
+                        print("Click")
+                        selected_vert = self.graph.get_closest_vert(
+                            self.point_window_to_graph(Point(*pg.mouse.get_pos())),
+                            TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL
+                        )
+                        if selected_vert is not None and selected_vert.role == TwinGraph.VertRole.DUAL:
+                            self.graph_nav_dual.loop_erased_random_walk_from(selected_vert)
             # Sustained Actions
             keys = pg.key.get_pressed()
             if keys[pg.K_LEFT]:
@@ -60,8 +84,8 @@ class GraphVis:
             if keys[pg.K_RIGHT]:
                 animation_frame = animation_frame+5
             if animation_frame < 0:
-                animation_frame = len(self.graph.animation_track) + animation_frame
-            if animation_frame >= len(self.graph.animation_track):
+                animation_frame = len(animation_deck[animation_deck_idx]) + animation_frame
+            if animation_frame >= len(animation_deck[animation_deck_idx]):
                 animation_frame = 0
 
             # Screen Reset
@@ -74,7 +98,7 @@ class GraphVis:
 
             # Draw edges
             for edge in self.graph.edges:
-                if displaying_primal and edge in self.graph.edges.difference(set(self.graph.animation_track[animation_frame])):
+                if displaying_primal and edge in self.graph.edges.difference(set(animation_deck[animation_deck_idx][animation_frame])):
                     src = self.point_graph_to_window(edge.primal_A.point)
                     dest = self.point_graph_to_window(edge.primal_B.point)
                     pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
@@ -88,15 +112,21 @@ class GraphVis:
                             pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
 
             # Test
-            for edge, _, _ in self.graph.animation_track[animation_frame]:
-                src = self.point_graph_to_window(edge.primal_A.point)
-                dest = self.point_graph_to_window(edge.primal_B.point)
+            for edge, role, _ in animation_deck[animation_deck_idx][animation_frame]:
+                if role == TwinGraph.VertRole.PRIMAL:
+                    src = self.point_graph_to_window(edge.primal_A.point)
+                    dest = self.point_graph_to_window(edge.primal_B.point)
+                else:
+                    if edge.dual_AB is None or edge.dual_BA is None:
+                        continue
+                    src = self.point_graph_to_window(edge.dual_AB.point)
+                    dest = self.point_graph_to_window(edge.dual_BA.point)
                 pg.draw.aaline(screen, GraphVis.DrawColors.red, src.tuple(), dest.tuple(), blend=10)
 
-            # Draw Close Vertices
-            closest_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.PRIMAL)
-            if closest_vert is not None:
-                pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(closest_vert.point).tuple(), 5)
+            # Highlight Selected Vert
+            selected_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL)
+            if selected_vert is not None:
+                pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(selected_vert.point).tuple(), 5)
 
             # Push to screen
             pg.display.flip()
@@ -105,7 +135,7 @@ class GraphVis:
             loop_idx += 1
             if loop_idx%5 == 0 and not animation_paused:
                 animation_frame += 1
-                if animation_frame >= len(self.graph.animation_track):
+                if animation_frame >= len(animation_deck[animation_deck_idx]):
                     animation_frame = 0
 
         # Quit Pygame

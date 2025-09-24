@@ -23,5 +23,6 @@ def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[floa
 
 points, weights, edge_idxs = generate_grid_graph(25,25)
 graph = TwinGraph(points, weights, edge_idxs)
+graph_nav = GraphNav(graph, TwinGraph.VertRole.DUAL)
 
-GraphVis(graph)
+GraphVis(graph, graph_nav)
