@@ -11,7 +11,7 @@ class RegionTree:
 
     def __init__(self, total_weight: float) -> None:
         self.verts = {RegionTree.Vert(total_weight)}
-        self.edges = set()
+        self.edges = Set()
 
     class Vert:
         weight: float

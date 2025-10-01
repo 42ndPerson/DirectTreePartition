@@ -17,6 +17,7 @@ class GraphVis:
         red = (255,50,100)
         green = (100,255,100)
         blue = (100,100,255)
+        purple = (200,100,255)
 
     def __init__(self, graph: TwinGraph, graph_nav_dual_dual: GraphNav) -> None:
         # Graph
@@ -110,8 +111,13 @@ class GraphVis:
                             dest = self.point_graph_to_window(edge.dual_BA.point)
                             pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
 
-            # Test
-            for edge, role, _ in animation_deck[animation_deck_idx][animation_frame]:
+            # Draw Animation
+            for edge, role, _, tag in animation_deck[animation_deck_idx][animation_frame]:
+                endA, endB = edge.get_dual_vert_pair(TwinGraph.EdgeDir.AB)
+                if endA.role == TwinGraph.VertRole.DUAL_EXTERIOR or endB.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                    if not displaying_dual_external:
+                        continue
+
                 if role == TwinGraph.VertRole.PRIMAL:
                     src = self.point_graph_to_window(edge.primal_A.point)
                     dest = self.point_graph_to_window(edge.primal_B.point)
@@ -120,7 +126,13 @@ class GraphVis:
                         continue
                     src = self.point_graph_to_window(edge.dual_AB.point)
                     dest = self.point_graph_to_window(edge.dual_BA.point)
-                pg.draw.line(screen, GraphVis.DrawColors.red, src.tuple(), dest.tuple(), 5)
+                
+                color: Tuple[int,int,int] = GraphVis.DrawColors.white # Placeholder
+                if tag == 0:
+                    color = GraphVis.DrawColors.red
+                elif tag == 1:
+                    color = GraphVis.DrawColors.green
+                pg.draw.line(screen, color, src.tuple(), dest.tuple(), 5)
 
             # Highlight Selected Vert
             selected_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL)

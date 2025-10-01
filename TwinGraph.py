@@ -25,7 +25,7 @@ class TwinGraph:
     # spatial_lookup_ref: List[List[TwinGraph.Vert]] # Indexing on x and then y
 
     animating: bool
-    animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir]]]]
+    animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir, int]]]]
 
     def __init__(self, points: List[Point], weights: List[float], edgeIdxs: List[Tuple[int,int]]) -> None:
         assert len(points) == len(weights)
@@ -143,7 +143,7 @@ class TwinGraph:
                 edge_tuples = []
                 for edge in self.edges.difference(edges_AB) | self.edges.difference(edges_BA):
                     # You may want to adjust VertRole and EdgeDir as appropriate for your animation logic
-                    edge_tuples.append((edge, TwinGraph.VertRole.PRIMAL, TwinGraph.EdgeDir.AB))
+                    edge_tuples.append((edge, TwinGraph.VertRole.PRIMAL, TwinGraph.EdgeDir.AB, 0))
                 self.animation_tracks[0].append(edge_tuples)
 
             # Break if loop is complete
@@ -211,7 +211,7 @@ class TwinGraph:
                     parent_tree_vert.add_child(child_tree_vert, edge, edge_dir)
                     visited_edges.add(edge)
                     if self.animating:
-                        self.animation_tracks[1 if role == TwinGraph.VertRole.PRIMAL else 2].append([(visited_edge, role, edge_dir) for visited_edge in visited_edges])
+                        self.animation_tracks[1 if role == TwinGraph.VertRole.PRIMAL else 2].append([(visited_edge, role, edge_dir, 0) for visited_edge in visited_edges])
 
                     index = dfs(dest, child_tree_vert, index)
 
