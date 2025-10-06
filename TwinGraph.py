@@ -1,10 +1,9 @@
 from __future__ import annotations
 from typing import List, Tuple, Set, Dict, Optional
+from enum import Enum
 
 from collections import deque
-#import bisect
 
-from enum import Enum
 from Euclid import *
 
 class TwinGraph:
@@ -20,9 +19,6 @@ class TwinGraph:
 
     primalMap: MapTree
     dualMap: MapTree
-
-    # spatial_lookup_res: float
-    # spatial_lookup_ref: List[List[TwinGraph.Vert]] # Indexing on x and then y
 
     animating: bool
     animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir, int]]]]
@@ -250,6 +246,12 @@ class TwinGraph:
         AB = 1
         BA = 2
 
+        def reverse(self) -> TwinGraph.EdgeDir:
+            if self == TwinGraph.EdgeDir.AB:
+                return TwinGraph.EdgeDir.BA
+            if self == TwinGraph.EdgeDir.BA:
+                return TwinGraph.EdgeDir.AB
+
     class VertRole(Enum):
         PRIMAL = 1
         DUAL = -1
@@ -269,6 +271,10 @@ class TwinGraph:
 
         map_tree_vert: TwinGraph.MapTree.MapTreeVert
 
+        # Instance labeling
+        index: int = 0
+        id_str: str
+
         # Counterclockwise edges must be sorted
         def __init__(self, point: Point, weight: float, role: TwinGraph.VertRole, counterclockwiseEdges: List[TwinGraph.QuadEdge]=[]) -> None:
             # TODO: Add assert for edge sorting
@@ -280,6 +286,9 @@ class TwinGraph:
 
             self.map_tree_vert = TwinGraph.MapTree.MapTreeVert(self)
 
+            self.id_str = ("P" if role.is_primal() else "D") + f'{TwinGraph.Vert.index:x}' # Hexadecimal ID for easier reading in debug
+            TwinGraph.Vert.index += 1
+
         # Edges must already have links to calling vertex
         def register_edges(self, edges: List[TwinGraph.QuadEdge]) -> None:
             # TODO: Add assert for edge linking
@@ -288,6 +297,10 @@ class TwinGraph:
                 edges.sort(key=lambda edge: edge.get_primal_rad_from(self)[0])
             if self.role.is_dual():
                 edges.sort(key=lambda edge: edge.get_dual_rad_from(self)[0])
+
+                # Exterior dual vert must have edges in reverse order
+                if self.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                    edges.reverse() 
 
             self.cc_edges = edges
             self.link_edges()
@@ -331,7 +344,9 @@ class TwinGraph:
         dual_BA_cc_next: TwinGraph.QuadEdge
         dual_BA_cc_prev: TwinGraph.QuadEdge
 
-        map_tree_edge: Optional[TwinGraph.MapTree.MapTreeEdge]
+        # Instance labeling
+        index: int = 0
+        id_str: str
 
         def __init__(
                 self,
@@ -346,6 +361,9 @@ class TwinGraph:
             self.dual_BA = None
             self.dual_AB_annotation = None
             self.dual_BA_annotation = None
+
+            self.id_str = f'E{TwinGraph.QuadEdge.index:x}' # Hexadecimal ID for easier reading in debug
+            TwinGraph.QuadEdge.index += 1
 
         # Get the ordered ends of an edge based on an edge direction
         def get_primal_vert_pair(self, dir: TwinGraph.EdgeDir) -> Tuple[TwinGraph.Vert, TwinGraph.Vert]:
@@ -384,24 +402,37 @@ class TwinGraph:
         # Get the angle to the vertex on the other end of an edge along with directional annotation  
         def get_primal_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]:
             dest, dir = self.get_primal_dest_from(src)
-            return (Point.src_dest_rad(src.point, dest.point), dir)
+            angle = Point.src_dest_rad(src.point, dest.point)
+
+            angle %= 2 * math.pi # Normalize angle to [0, 2pi]
+            return (angle, dir)
         def get_dual_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]:
             dest, dir = self.get_dual_dest_from(src)
-            return (Point.src_dest_rad(src.point, dest.point), dir)
-        
+            if src == dest:
+                raise ValueError("Src and dest are the same in get_dual_rad_from, cannot compute angle.")
+            
+            angle = Point.src_dest_rad(src.point, dest.point)
+            if src.role == TwinGraph.VertRole.DUAL_EXTERIOR or dest.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                angle += math.pi # Flip angle if one of the verts is the exterior vert
+
+            angle %= 2 * math.pi # Normalize angle to [0, 2pi]
+            return (angle, dir)
+
         # Get the angle of the edge traveling in a given dir  
         def get_primal_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
-            if dir == TwinGraph.EdgeDir.AB:
-                return Point.src_dest_rad(self.primal_A.point, self.primal_B.point)
-            if dir == TwinGraph.EdgeDir.BA:
-                return Point.src_dest_rad(self.primal_B.point, self.primal_A.point)
+            return self.get_primal_rad_from(self.primal_A if dir == TwinGraph.EdgeDir.AB else self.primal_B)[0]
+            # if dir == TwinGraph.EdgeDir.AB:
+            #     return Point.src_dest_rad(self.primal_A.point, self.primal_B.point)
+            # if dir == TwinGraph.EdgeDir.BA:
+            #     return Point.src_dest_rad(self.primal_B.point, self.primal_A.point)
         def get_dual_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
             if self.dual_AB is None or self.dual_BA is None:
                 raise ValueError("Dual vertices not set for this edge.")
-            if dir == TwinGraph.EdgeDir.AB:
-                return Point.src_dest_rad(self.dual_AB.point, self.dual_BA.point)
-            if dir == TwinGraph.EdgeDir.BA:
-                return Point.src_dest_rad(self.dual_BA.point, self.dual_AB.point)
+            return self.get_dual_rad_from(self.dual_AB if dir == TwinGraph.EdgeDir.AB else self.dual_BA)[0]
+            # if dir == TwinGraph.EdgeDir.AB:
+            #     return Point.src_dest_rad(self.dual_AB.point, self.dual_BA.point)
+            # if dir == TwinGraph.EdgeDir.BA:
+            #     return Point.src_dest_rad(self.dual_BA.point, self.dual_AB.point)
         
         # Get the cc next edge from vert
         def get_primal_cc_next_edge(self, vert: TwinGraph.Vert) -> Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]:
@@ -440,18 +471,22 @@ class TwinGraph:
             raise KeyError("Vert for get_dual_cc_prev_edge is not on edge.")
         
     class MapTree:
+        root: TwinGraph.MapTree.MapTreeVert
+        verts: Set[TwinGraph.MapTree.MapTreeVert]
+        edges: Set[TwinGraph.MapTree.MapTreeEdge]
+
         def __init__(self, root: MapTreeVert):
             self.root = root
             self.verts = set()
             self.edges = set()
-            self._collect_tree(root)
+            self.collect_tree(root)
 
-        def _collect_tree(self, vert):
+        def collect_tree(self, vert):
             self.verts.add(vert)
             for edge in vert.out_edges:
                 self.edges.add(edge)
                 if edge.child not in self.verts:
-                    self._collect_tree(edge.child)
+                    self.collect_tree(edge.child)
 
         class MapTreeVert:
             def __init__(self, twin_vert: TwinGraph.Vert):
@@ -464,7 +499,6 @@ class TwinGraph:
             def add_child(self, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir):
                 edge = TwinGraph.MapTree.MapTreeEdge(self, child, twin_edge, edge_dir)
                 self.out_edges.append(edge)
-                twin_edge.map_tree_edge = edge
                 child.in_edge = edge
 
         class MapTreeEdge:

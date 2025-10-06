@@ -3,6 +3,7 @@ from typing import List, Tuple
 from Euclid import *
 from TwinGraph import *
 from GraphVis import *
+from RegionTree import *
 
 def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[float], List[Tuple[int, int]]]:
     points = []
@@ -23,6 +24,7 @@ def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[floa
 
 points, weights, edge_idxs = generate_grid_graph(25,25)
 graph = TwinGraph(points, weights, edge_idxs)
-graph_nav = GraphNav(graph, TwinGraph.VertRole.DUAL)
+region_tree = RegionTree(graph)
+graph_nav = GraphNav(graph, region_tree)
 
-GraphVis(graph, graph_nav)
+GraphVis(graph, graph_nav, region_tree)
