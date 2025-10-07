@@ -39,16 +39,19 @@ class RegionTree:
         self.regions.add(vert)  
 
     def remove_region(self, vert: RegionTree.Region) -> None:
+        print("Removing region", vert.id_str)
         for edge in list(vert.region_edges):
             self.remove_edge(edge)
         self.regions.remove(vert)
 
     def add_edge(self, edge: RegionTree.Edge) -> None:
+        print("Adding edge", edge.twin_graph_edge.id_str)
         self.edges.add(edge)
         edge.end_A.register_edge(edge)
         edge.end_B.register_edge(edge)
 
     def remove_edge(self, edge: RegionTree.Edge) -> None:
+        print("Removing edge", edge.twin_graph_edge.id_str)
         self.edges.remove(edge)
         edge.end_A.unregister_edge(edge)
         edge.end_B.unregister_edge(edge)
@@ -81,11 +84,13 @@ class RegionTree:
             self.calc_point()
 
         def register_edge(self, edge: RegionTree.Edge) -> None:
+            print("Registering edge", edge.twin_graph_edge.id_str, "to region", self.id_str)
             self.region_edges.add(edge)
             self.bridge_set.add(edge.twin_graph_edge)
             self.bridge_to_region_edge_map[edge.twin_graph_edge] = edge
 
         def unregister_edge(self, edge: RegionTree.Edge) -> None:
+            print("Unregistering edge", edge.twin_graph_edge.id_str, "from region", self.id_str)
             self.region_edges.remove(edge)
             self.bridge_set.remove(edge.twin_graph_edge)
             del self.bridge_to_region_edge_map[edge.twin_graph_edge]
@@ -109,62 +114,63 @@ class RegionTree:
             else:
                 self.point = Point(x_sum / scaling, y_sum / scaling)
 
-        def get_all_dual_verts_contained_by_perimeter(self, graph: TwinGraph) -> Set[TwinGraph.Vert]:
-            # Conduct a flood fill from one of the perimeter edges to find all dual verts to one
-            #  side of the perimeter.  Then, check which side of the perimeter the external dual 
-            #  vert is on and return the converse set of verts.
-            if len(self.dual_perimeter) == 0:
-                print("BBB")
-                return graph.dualVerts
+        # def get_all_dual_verts_contained_by_perimeter(self, graph: TwinGraph) -> Set[TwinGraph.Vert]:
+        #     # Conduct a flood fill from one of the perimeter edges to find all dual verts to one
+        #     #  side of the perimeter.  Then, check which side of the perimeter the external dual 
+        #     #  vert is on and return the converse set of verts.
+        #     if len(self.dual_perimeter) == 0:
+        #         print("BBB")
+        #         return graph.dualVerts
 
-            # Get all verts in the perimeter
-            perimeter_verts = set()
-            for edge, _ in self.dual_perimeter:
-                if edge.dual_AB is not None:
-                    perimeter_verts.add(edge.dual_AB)
-                if edge.dual_BA is not None:
-                    perimeter_verts.add(edge.dual_BA)
+        #     # Get all verts in the perimeter
+        #     perimeter_verts = self.get_perimeter_verts()
             
-            # Use flood fill from the first perimeter edge's dual vert
-            visited: Set[TwinGraph.Vert] = set()
-            queue: List[TwinGraph.Vert] = []
+        #     # Use flood fill from the first perimeter edge's dual vert
+        #     visited: Set[TwinGraph.Vert] = set()
+        #     queue: List[TwinGraph.Vert] = []
 
-            # Start from the dual vert of the first perimeter edge
-            start_edge, _ = self.dual_perimeter[0]
+        #     # Start from the dual vert of the first perimeter edge
+        #     start_edge, _ = self.dual_perimeter[0]
 
-            # Pick one of the dual verts (AB or BA)
-            start_dual_vert = start_edge.dual_AB if start_edge.dual_AB is not None else start_edge.dual_BA
-            if start_dual_vert is None:
-                return set()
-            queue.append(start_dual_vert)
-            while queue:
-                vert = queue.pop()
-                if vert in visited:
-                    continue
-                visited.add(vert)
-                # Add all adjacent dual verts via cc_edges
-                for edge in vert.cc_edges:
-                    # Get the other dual vert on this edge
-                    if edge.dual_AB == vert and edge.dual_BA is not None:
-                        neighbor = edge.dual_BA
-                    elif edge.dual_BA == vert and edge.dual_AB is not None:
-                        neighbor = edge.dual_AB
-                    else:
-                        continue
-                    # Only add if not crossing the perimeter
-                    if neighbor not in perimeter_verts and neighbor not in visited:
-                        queue.append(neighbor)
-                    # if edge not in self.dual_perimeter and neighbor not in visited:
-                    #     queue.append(neighbor)
+        #     # Pick one of the dual verts (AB or BA)
+        #     start_dual_vert = start_edge.dual_AB if start_edge.dual_AB is not None else start_edge.dual_BA
+        #     if start_dual_vert is None:
+        #         return set()
+        #     queue.append(start_dual_vert)
+        #     while queue:
+        #         vert = queue.pop()
+        #         if vert in visited:
+        #             continue
+        #         visited.add(vert)
+                
+        #         # Add all adjacent dual verts via cc_edges
+        #         for edge in vert.cc_edges:
+        #             # Get the other dual vert on this edge
+        #             if edge.dual_AB == vert and edge.dual_BA is not None:
+        #                 neighbor = edge.dual_BA
+        #             elif edge.dual_BA == vert and edge.dual_AB is not None:
+        #                 neighbor = edge.dual_AB
+        #             else:
+        #                 continue
+        #             # Only add if not crossing the perimeter
+        #             if neighbor not in perimeter_verts and neighbor not in visited:
+        #                 queue.append(neighbor)
 
-            print("!!!: ", graph.external_dual_vert in visited, len(visited))
+        #     print("!!!: ", graph.external_dual_vert in visited, len(visited))
 
-            # If the external dual vert is in visited, we want the other side
-            if graph.external_dual_vert in visited:
-                # Return all dual verts not in visited
-                return set(graph.dualVerts) - visited - perimeter_verts
-            else:
-                return visited - perimeter_verts
+        #     # If the external dual vert is in visited, we want the other side
+        #     if graph.external_dual_vert in visited:
+        #         # Return all dual verts not in visited
+        #         return set(graph.dualVerts) - visited - perimeter_verts
+        #     else:
+        #         return visited - perimeter_verts
+            
+        def get_perimeter_verts(self) -> Set[TwinGraph.Vert]:
+            verts = set()
+            for edge, dir in self.dual_perimeter:
+                src, _ = edge.get_dual_vert_pair(dir)
+                verts.add(src)
+            return verts
 
     class Edge:
         # Edge A and B ends must match directionally with underlying twin_graph_edge

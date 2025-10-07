@@ -117,7 +117,6 @@ class GraphVis:
                                 TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL
                             )
                             if selected_vert is not None and selected_vert.role == TwinGraph.VertRole.DUAL:
-                                #self.graph_nav_dual.loop_erased_random_walk_from(selected_vert)
                                 self.graph_nav_dual.walk_division_from(None, selected_vert)
 
             # Sustained Actions

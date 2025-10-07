@@ -38,9 +38,9 @@ class GraphNav:
         # Allow inefficient automatic region detection if none provided
         region = None
         if region_in is None:
+            perimeter_verts = self.get_enclosing_perimeter_verts(start_vert)
             for candidate_region in self.region_tree.regions:
-                print("Checking region", candidate_region.id_str)
-                if start_vert in candidate_region.get_all_dual_verts_contained_by_perimeter(self.graph):
+                if candidate_region.get_perimeter_verts().issuperset(perimeter_verts): # Perimeter verts will not contain interior corner verts of the perimeter
                     region = candidate_region
                     break
             if region is None:
@@ -48,19 +48,50 @@ class GraphNav:
         else:
             region = region_in
 
-        # TODO:
-         # Verify cc linked list is valid
-         # Progressive edge selection logic in traverse_clockwise_loop
-
         # Build walk than progressively discover regions
         region_edge = self.loop_erased_random_walk_from(start_vert)
-        # self.traverse_clockwise_loop(region_edge, TwinGraph.EdgeDir.AB)
         self.develop_region(region, region_edge, TwinGraph.EdgeDir.AB) # Ok to start in arbitrary direction because loop is starting from boundary rather than bridge, so equivalent connections occur from either side
-        print("Region Count:", len(self.region_tree.regions))
+        
         self.region_tree.remove_region(region) # Remove old region
+        print("Region Count:", len(self.region_tree.regions))
 
-        for region in self.region_tree.regions:
-            print("Region", region.id_str, "weight", region.weight, "bridges", len(region.bridge_set), "edges", len(region.dual_perimeter))
+    def get_enclosing_perimeter_verts(self, vert: TwinGraph.Vert) -> Set[TwinGraph.Vert]:
+        """
+        Find the perimeter verts that enclose the given vert
+         by flood filling out to (but not crossing) the 
+         tree_vert edges
+        Note: Some verts on the perimeter will be inaccessible
+         to this algorithm when they occur on an interior
+         corner of the perimeter, as all external paths to
+         that vert are through edges of the perimeter which 
+         approach does not traverse
+        """
+
+        # Check vert not already in boundary
+        if vert in self.tree_verts:
+            raise ValueError("Starting vert is already in tree.")
+        # Check vert is dual
+        if vert.role != TwinGraph.VertRole.DUAL:
+            raise ValueError("Starting vert role does not match graph_selection.")
+        
+        perim: Set[TwinGraph.Vert] = set()
+
+        visited: Set[TwinGraph.Vert] = set()
+        queue: List[TwinGraph.Vert] = [vert]
+        while len(queue) > 0:
+            current = queue.pop(0)
+            visited.add(current)
+
+            for edge in current.cc_edges:
+                if edge in self.tree_edges:
+                    raise RuntimeError("Flood fill leaked into tree edge.")
+                neighbor, _ = edge.get_dual_dest_from(current)
+                if neighbor not in visited and neighbor not in queue and neighbor not in self.tree_verts:
+                    queue.append(neighbor)
+                if neighbor in self.tree_verts:
+                    perim.add(neighbor)
+
+        return perim
 
     def loop_erased_random_walk_from(self, vert: TwinGraph.Vert) -> TwinGraph.QuadEdge:
         assert vert not in self.tree_verts, "Starting vert is already in tree."
@@ -159,13 +190,9 @@ class GraphNav:
         # tree vertex).  Build this so as to replace the region passed in.  Build new
         # region tree vertices for each loop found, starting from start_edge
 
-        print("developing region")
-
         loop = self.traverse_clockwise_loop(start_edge, start_dir)
         root_region = RegionTree.Region(0, loop) # TODO: Get weight of new region
         self.region_tree.add_region(root_region) # Automatically handles region registration
-
-        print("Loop length:", len(loop))
 
         for edge, dir in loop:
             if edge in self.bridge_edges and edge not in src_region.bridge_set and edge != start_edge:
@@ -180,7 +207,7 @@ class GraphNav:
 
                 self.region_tree.add_edge(new_region_edge) # Automatically handles edge registration
 
-            if edge in self.bridge_edges and edge in src_region.bridge_set and edge != start_edge:
+            if edge in self.bridge_edges and edge in src_region.bridge_set:# and edge != start_edge:
                 # Edge is a bridge to src_region, replace old link to src_region with new link to root_region
                 old_region_edge = src_region.bridge_to_region_edge_map[edge]
                 other_region, _ = old_region_edge.get_dest_from(src_region)
@@ -210,7 +237,6 @@ class GraphNav:
         # Mark start vert
         start_vert = current_vert
 
-        print("Starting loop at vert", current_vert.id_str, "on edge", current_edge.id_str, "going", edge_dir.name)
         while True:
             # Move to the next vert along the current edge and direction
             current_vert, current_dir = current_edge.get_dual_dest_from(current_vert)
@@ -231,7 +257,7 @@ class GraphNav:
                     next_edge = next_edge.dual_AB_cc_next
                 _, next_dir = next_edge.get_dual_dest_from(current_vert)
 
-                print("At vert", current_vert.id_str, "checking edge to", next_edge.get_dual_dest_from(current_vert)[0].id_str, "along", next_edge.get_dual_rad_from(current_vert)[0])
+                # print("At vert", current_vert.id_str, "checking edge to", next_edge.get_dual_dest_from(current_vert)[0].id_str, "along", next_edge.get_dual_rad_from(current_vert)[0])
 
                 if next_edge in self.tree_edges or next_edge in self.bridge_edges:
                     break
