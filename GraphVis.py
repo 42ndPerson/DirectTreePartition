@@ -21,6 +21,7 @@ class GraphVis:
         blue = (100,100,255)
         purple = (200,100,255)
         pink = (255,50,255)
+        orange = (255,70,0)
 
     def __init__(self, graph: TwinGraph, graph_nav_dual: GraphNav, region_tree: RegionTree) -> None:
         # Graph
@@ -141,7 +142,7 @@ class GraphVis:
             # Draw edges
             for edge in self.graph.edges:
                 if displaying_primal and edge in self.graph.edges.difference(set(animation_deck[animation_deck_idx][animation_frame])):
-                    src, dest = self.get_exterior_adjusted_point(edge.primal_A, edge.primal_B)
+                    src, dest = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.PRIMAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                     pg.draw.aaline(screen, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), blend=10)
                 if displaying_dual and edge.dual_AB is not None and edge.dual_BA is not None: # Check dual exists and should be drawn
@@ -149,7 +150,7 @@ class GraphVis:
                         edge.dual_AB.role != TwinGraph.VertRole.DUAL_EXTERIOR and
                         edge.dual_BA.role != TwinGraph.VertRole.DUAL_EXTERIOR
                     ):
-                            src, dest = self.get_exterior_adjusted_point(edge.dual_AB, edge.dual_BA)
+                            src, dest = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
                             src, dest = self.point_pair_graph_to_window(src, dest)
                             pg.draw.aaline(screen, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), blend=10)
 
@@ -161,12 +162,12 @@ class GraphVis:
                         continue
 
                 if role == TwinGraph.VertRole.PRIMAL:
-                    src, dest = self.get_exterior_adjusted_point(edge.primal_A, edge.primal_B)
+                    src, dest = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.PRIMAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                 else:
                     if edge.dual_AB is None or edge.dual_BA is None:
                         continue
-                    src, dest = self.get_exterior_adjusted_point(edge.dual_AB, edge.dual_BA)
+                    src, dest = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                 
                 color: Tuple[int,int,int] = GraphVis.DrawColors.white # Placeholder
@@ -188,8 +189,12 @@ class GraphVis:
             # Draw Region Tree
             if displaying_region_tree:
                 for edge in self.region_tree.edges:
+                    alert = False
+                    if edge.twin_graph_edge in map(lambda e: e.twin_graph_edge, self.region_tree.edges - {edge}):
+                        alert = True
+
                     src, dest = self.point_pair_graph_to_window(edge.end_A.point, edge.end_B.point)
-                    pg.draw.aaline(screen, GraphVis.DrawColors.green, src.tuple(), dest.tuple(), blend=10)
+                    pg.draw.aaline(screen, GraphVis.DrawColors.green if not alert else GraphVis.DrawColors.orange, src.tuple(), dest.tuple(), blend=10)
                 for region in self.region_tree.regions:
                     region_pos = self.point_graph_to_window(region.point)
                     label_surface = font.render(str(region.id_str), True, GraphVis.DrawColors.white)
@@ -217,7 +222,7 @@ class GraphVis:
                 if selected_region is not None:
                     if displaying_perimeters:
                         for edge, dir in selected_region.dual_perimeter:
-                            src, dest = self.get_exterior_adjusted_point(*edge.get_dual_vert_pair(dir))
+                            src, dest = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
                             src, dest = self.point_pair_graph_to_window(src, dest)
                             pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
 
@@ -280,42 +285,41 @@ class GraphVis:
             active_x + self.graph.lowerXBound,
             active_y + self.graph.lowerYBound
         )
-    
-    def get_exterior_adjusted_point(self, vertA: TwinGraph.Vert, vertB: TwinGraph.Vert) -> Tuple[Point, Point]:
-        if vertA.role == TwinGraph.VertRole.DUAL_EXTERIOR or vertB.role == TwinGraph.VertRole.DUAL_EXTERIOR:
-            # Identify the exterior and non-exterior vertices
-            if vertA.role == TwinGraph.VertRole.DUAL_EXTERIOR:
-                exterior_vert = vertA
-                non_exterior_vert = vertB
-            else:
-                exterior_vert = vertB
-                non_exterior_vert = vertA
 
-            # Center of the graph region
-            center_x = (self.graph.upperXBound + self.graph.lowerXBound) / 2
-            center_y = (self.graph.upperYBound + self.graph.lowerYBound) / 2
-            center = Point(center_x, center_y)
-
-            # Vector from center to non-exterior point
-            dx = non_exterior_vert.point.x - center.x
-            dy = non_exterior_vert.point.y - center.y
-
-            # Angle from center to non-exterior point
-            angle = math.atan2(dy, dx)
-
-            # Extend out at that angle beyond the window
-            # Use a distance larger than the graph bounds
-            extend_dist = max(
-                self.graph.upperXBound - self.graph.lowerXBound,
-                self.graph.upperYBound - self.graph.lowerYBound
-            ) * 2
-
-            dest_x = non_exterior_vert.point.x + extend_dist * math.cos(angle)
-            dest_y = non_exterior_vert.point.y + extend_dist * math.sin(angle)
-            dest = Point(dest_x, dest_y)
-
-            return non_exterior_vert.point, dest
+    def get_exterior_adjusted_point(self, edge: TwinGraph.QuadEdge, role: TwinGraph.VertRole) -> Tuple[Point, Point]:
+        if role.is_dual():
+            vert_A = edge.dual_AB
+            vert_B = edge.dual_BA
         else:
-            return vertA.point, vertB.point
+            vert_A = edge.primal_A
+            vert_B = edge.primal_B
 
+        if vert_A is not None and vert_B is not None:
+            if vert_A.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                angle, _ = edge.get_dual_rad_from(vert_B)
+
+                # Project a point out along the angle given by get_primal_rad_from or get_dual_rad_from
+                projected_point = Point(
+                    vert_B.point.x + 20*math.cos(angle),
+                    vert_B.point.y + 20*math.sin(angle)
+                )
+
+                return (vert_B.point, projected_point)
+            
+            if vert_B.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                angle, _ = edge.get_dual_rad_from(vert_A)
+
+                # Project a point out along the angle given by get_primal_rad_from or get_dual_rad_from
+                projected_point = Point(
+                    vert_A.point.x + 20*math.cos(angle),
+                    vert_A.point.y + 20*math.sin(angle)
+                )
+
+                return (vert_A.point, projected_point)
+            
+            # Neither vertex is exterior, return original points
+            return (vert_A.point, vert_B.point)
+        
+        else:
+            raise ValueError("Edge does not have both dual vertices defined.")
     

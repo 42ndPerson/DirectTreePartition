@@ -415,6 +415,17 @@ class TwinGraph:
             if src.role == TwinGraph.VertRole.DUAL_EXTERIOR or dest.role == TwinGraph.VertRole.DUAL_EXTERIOR:
                 angle += math.pi # Flip angle if one of the verts is the exterior vert
 
+                # Offset angle to land between primal verts to avoid edge overlap
+                # TODO: Develop more robust solution
+                primalA, primalB = self.get_primal_vert_pair(dir)
+                primal_average = Point(
+                    (primalA.point.x + primalB.point.x) / 2,
+                    (primalA.point.y + primalB.point.y) / 2
+                )
+                angle_to_primal_average = Point.src_dest_rad(src.point if src.role == TwinGraph.VertRole.DUAL_EXTERIOR else dest.point, primal_average)
+                angle_diff = angle_to_primal_average - angle
+                angle += angle_diff # Offset by 1/5 of the angle difference
+
             angle %= 2 * math.pi # Normalize angle to [0, 2pi]
             return (angle, dir)
 

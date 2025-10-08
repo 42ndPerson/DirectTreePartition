@@ -35,26 +35,48 @@ class RegionTree:
         self.id_str = f"RTree{RegionTree.instance_counter}"
         RegionTree.instance_counter += 1
 
-    def add_region(self, vert: RegionTree.Region) -> None:  
+    def add_region(self, vert: RegionTree.Region) -> None: 
+        print("Adding region", vert.id_str, "-----") 
         self.regions.add(vert)  
 
     def remove_region(self, vert: RegionTree.Region) -> None:
-        print("Removing region", vert.id_str)
+        print("Removing region", vert.id_str, "-----")
         for edge in list(vert.region_edges):
             self.remove_edge(edge)
         self.regions.remove(vert)
 
     def add_edge(self, edge: RegionTree.Edge) -> None:
-        print("Adding edge", edge.twin_graph_edge.id_str)
+        print("Adding edge", edge.id_str, "with twin", edge.twin_graph_edge.id_str)
         self.edges.add(edge)
         edge.end_A.register_edge(edge)
         edge.end_B.register_edge(edge)
 
     def remove_edge(self, edge: RegionTree.Edge) -> None:
-        print("Removing edge", edge.twin_graph_edge.id_str)
+        print("Removing edge", edge.id_str, "with twin", edge.twin_graph_edge.id_str)
         self.edges.remove(edge)
         edge.end_A.unregister_edge(edge)
         edge.end_B.unregister_edge(edge)
+
+    def debug_inventory(self, edge: RegionTree.Edge) -> None:
+        print("Inventory on Edge:", edge.id_str)
+        print("    ", "Edge in region tree" if edge in self.edges else "Edge NOT in region tree")
+        print("    ", "Edge end_A in region tree" if edge.end_A in self.regions else "Edge end_A NOT in region tree")
+        print("    ", "Edge end_B in region tree" if edge.end_B in self.regions else "Edge end_B NOT in region tree")
+        print("    ", "Edge in end_A region edges" if edge in edge.end_A.region_edges else "Edge NOT in end_A region edges")
+        print("    ", "Edge in end_B region edges" if edge in edge.end_B.region_edges else "Edge NOT in end_B region edges")
+        print("    ", "Edge in end_A bridge_to_region_edge_map" if edge in edge.end_A.bridge_to_region_edge_map.values() else "Edge NOT in end_A bridge_to_region_edge_map")
+        print("    ", "Edge in end_B bridge_to_region_edge_map" if edge in edge.end_B.bridge_to_region_edge_map.values() else "Edge NOT in end_B bridge_to_region_edge_map")
+        print("    ", "Edge twin_graph_edge in end_A bridge_set" if edge.twin_graph_edge in edge.end_A.bridge_set else "Edge twin_graph_edge NOT in end_A bridge_set")
+        print("    ", "Edge twin_graph_edge in end_B bridge_set" if edge.twin_graph_edge in edge.end_B.bridge_set else "Edge twin_graph_edge NOT in end_B bridge_set")
+        print("    ", "Edge twin_graph_edge in end_A bridge_to_region_edge_map" if edge.twin_graph_edge in edge.end_A.bridge_to_region_edge_map.keys() else "Edge twin_graph_edge NOT in end_A bridge_to_region_edge_map")
+        print("    ", "Edge twin_graph_edge in end_B bridge_to_region_edge_map" if edge.twin_graph_edge in edge.end_B.bridge_to_region_edge_map.keys() else "Edge twin_graph_edge NOT in end_B bridge_to_region_edge_map")
+
+        print("    ", "--------- Scanning all regions for edge presence ---------")
+        for region in self.regions:
+            if edge in region.region_edges:
+                print("    ", "Edge found in region edges of", region.id_str)
+            if edge in region.bridge_to_region_edge_map.values():
+                print("    ", "Edge found in bridge_to_region_edge_map of", region.id_str)
 
     class Region: # TODO: Rename to region
         weight: float # Total weight of the region
@@ -78,7 +100,7 @@ class RegionTree:
             self.bridge_set = set()
             self.bridge_to_region_edge_map = dict()
 
-            self.id_str = f'V{RegionTree.Region.instance_counter:x}' # Hexadecimal ID for easier reading in debug
+            self.id_str = f'R{RegionTree.Region.instance_counter:x}' # Hexadecimal ID for easier reading in debug
             RegionTree.Region.instance_counter += 1
 
             self.calc_point()
@@ -105,8 +127,7 @@ class RegionTree:
                     x_sum += src.point.x
                     y_sum += src.point.y
                     scaling += 1
-                else:
-                    print(len(self.dual_perimeter), "len perim with exterior dual vert")
+                # else:
                     # scaling -= 0.1 # Boost to push towards exterior
 
             if len(self.dual_perimeter) == 0:
@@ -177,6 +198,14 @@ class RegionTree:
         end_A: RegionTree.Region
         end_B: RegionTree.Region
         twin_graph_edge: TwinGraph.QuadEdge
+
+        # Instance labeling
+        instance_counter: int = 0
+        id_str: str
+
+        def __init__(self) -> None:
+            self.id_str = f'RE{RegionTree.Edge.instance_counter:x}' # Hexadecimal ID for easier reading in debug
+            RegionTree.Edge.instance_counter += 1
 
         # Get the vertex on the other end of an edge along with directional annotation
         def get_dest_from(self, src: RegionTree.Region) -> Tuple[RegionTree.Region, RegionTree.EdgeDir]:

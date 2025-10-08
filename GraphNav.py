@@ -1,12 +1,17 @@
 from __future__ import annotations
 from typing import List, Tuple, Set, Optional
 
+import subprocess
+import sys
+
 import random # TODO: Confirm pseudo-randomness is acceptable
 
 from TwinGraph import *
 from RegionTree import *
 
 class GraphNav:
+    lockout = False
+
     graph: TwinGraph
 
     tree_verts: Set[TwinGraph.Vert]
@@ -47,13 +52,13 @@ class GraphNav:
                 raise ValueError("Starting vert is not contained in any region.")
         else:
             region = region_in
+        print("Starting walk division from region", region.id_str, "at vert", start_vert.id_str)
 
         # Build walk than progressively discover regions
         region_edge = self.loop_erased_random_walk_from(start_vert)
         self.develop_region(region, region_edge, TwinGraph.EdgeDir.AB) # Ok to start in arbitrary direction because loop is starting from boundary rather than bridge, so equivalent connections occur from either side
         
         self.region_tree.remove_region(region) # Remove old region
-        print("Region Count:", len(self.region_tree.regions))
 
     def get_enclosing_perimeter_verts(self, vert: TwinGraph.Vert) -> Set[TwinGraph.Vert]:
         """
@@ -193,11 +198,39 @@ class GraphNav:
         loop = self.traverse_clockwise_loop(start_edge, start_dir)
         root_region = RegionTree.Region(0, loop) # TODO: Get weight of new region
         self.region_tree.add_region(root_region) # Automatically handles region registration
+        print("Loop:", [f"{edge.id_str} ({dir.name})" for edge, dir in loop])
+
+        if GraphNav.lockout:
+            return root_region
 
         for edge, dir in loop:
             if edge in self.bridge_edges and edge not in src_region.bridge_set and edge != start_edge:
                 # Start a new clockwise loop from the other side of the bridge edge
-                neighbor_region = self.develop_region(src_region, edge, dir.reverse())
+                try:
+                    neighbor_region = self.develop_region(src_region, edge, dir.reverse())
+                    if GraphNav.lockout:
+                        return root_region
+                except RecursionError:
+                    if sys.platform != 'darwin':
+                        print("This function is intended for macOS only.")
+                        return
+
+                    try:
+                        # The AppleScript command to activate the Terminal application
+                        script = 'tell application "Terminal" to activate'
+                        
+                        # Execute the command using subprocess
+                        # check=True will raise an exception if the command fails
+                        subprocess.run(['osascript', '-e', script], check=True)
+                        
+                    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                        # Handle potential errors, like osascript not being found
+                        # or the script failing to execute.
+                        print(f"Error bringing Terminal to the front: {e}")
+
+                    print("Recursion depth exceeded during region development. Possible infinite loop.")
+                    GraphNav.lockout = True
+                    return root_region
 
                 # Link the new region tree vertex to the neighbor region tree vertex
                 new_region_edge = RegionTree.Edge()
@@ -211,7 +244,11 @@ class GraphNav:
                 # Edge is a bridge to src_region, replace old link to src_region with new link to root_region
                 old_region_edge = src_region.bridge_to_region_edge_map[edge]
                 other_region, _ = old_region_edge.get_dest_from(src_region)
-                # Not necessary to unregister old edge because region is being deleted
+                # Tempting to think that it is not necessary to unregister old edge because region is being deleted
+                #  However, that leads to an order of operations where the new edge is added and registered under its
+                #  twin in the bridge_to_region_edge_map before an old edge is removed that can then delete the new
+                #  entry from the map.  So, removal here is necessary.
+                self.region_tree.remove_edge(old_region_edge)
 
                 new_region_edge = RegionTree.Edge()
                 new_region_edge.end_A = root_region
@@ -269,4 +306,4 @@ class GraphNav:
                 break
 
         return visited_edges
-            
+
