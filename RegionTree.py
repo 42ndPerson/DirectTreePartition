@@ -78,7 +78,7 @@ class RegionTree:
             if edge in region.bridge_to_region_edge_map.values():
                 print("    ", "Edge found in bridge_to_region_edge_map of", region.id_str)
 
-    class Region: # TODO: Rename to region
+    class Region:
         weight: float # Total weight of the region
         dual_perimeter: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]] # Edges that define the perimeter of the region in the dual graph
 

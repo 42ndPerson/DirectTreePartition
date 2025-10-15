@@ -196,7 +196,8 @@ class GraphNav:
         # region tree vertices for each loop found, starting from start_edge
 
         loop = self.traverse_clockwise_loop(start_edge, start_dir)
-        root_region = RegionTree.Region(0, loop) # TODO: Get weight of new region
+        region_weight = self.graph.count_primal_verts_within_perim(loop)
+        root_region = RegionTree.Region(region_weight, loop)
         self.region_tree.add_region(root_region) # Automatically handles region registration
         print("Loop:", [f"{edge.id_str} ({dir.name})" for edge, dir in loop])
 
