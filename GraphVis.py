@@ -55,7 +55,7 @@ class GraphVis:
         # Animation
         animation_frame = 0
         animation_paused = False
-        animation_deck_idx = 0
+        animation_deck_idx = 4
         animation_deck = self.graph.animation_tracks + self.graph_nav_dual.animation_tracks
         for track in animation_deck:
             assert len(track) > 0, "Animation deck contains empty track."
@@ -150,6 +150,11 @@ class GraphVis:
                         displaying_central_region = not displaying_central_region
                     if event.key == pg.K_q:
                         self.graph_nav_dual.run_two_split_attempt()
+                    if event.key == pg.K_m:
+                        # Reset system
+                        self.region_tree = RegionTree(self.graph)
+                        self.graph_nav_dual = GraphNav(self.graph, self.region_tree)
+                        animation_deck = self.graph.animation_tracks + self.graph_nav_dual.animation_tracks
                     if pg.K_1 <= event.key <= pg.K_9: # Select animation track
                         idx = event.key - pg.K_1
                         if idx < len(animation_deck):
@@ -176,9 +181,9 @@ class GraphVis:
             # Sustained Actions
             keys = pg.key.get_pressed()
             if keys[pg.K_LEFT]:
-                animation_frame = animation_frame-5
+                animation_frame = animation_frame-3
             if keys[pg.K_RIGHT]:
-                animation_frame = animation_frame+5
+                animation_frame = animation_frame+3
             if animation_frame < 0:
                 animation_frame = len(animation_deck[animation_deck_idx]) + animation_frame
             if animation_frame >= len(animation_deck[animation_deck_idx]):
@@ -322,7 +327,7 @@ class GraphVis:
                         screen.blit(label_surface, (mid_x+2, mid_y+2))
                 for region in self.region_tree.regions:
                     region_pos = self.point_graph_to_window(region.point)
-                    label_surface = font.render(str(region.weight), True, GraphVis.DrawColors.white)
+                    label_surface = font.render(str(region.id_str) + "---" + str(region.weight), True, GraphVis.DrawColors.white)
                     screen.blit(label_surface, (region_pos.x + 8, region_pos.y - 12))
                 # for region in self.region_tree.regions:
                 #     pg.draw.circle(screen, GraphVis.DrawColors.red, self.point_graph_to_window(region.point).tuple(), 5)

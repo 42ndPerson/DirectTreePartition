@@ -38,6 +38,11 @@ class GraphNav:
     def run_two_split_attempt(self):
         while self.region_tree.central_region is not None and self.region_tree.edge_center is None:
             # Select random starting vert within central region
+            if len(self.region_tree.central_region.get_interior_lining_verts()) == 0:
+                print("Central region:", self.region_tree.central_region.id_str)
+                print("Central region perimeter verts:", [v.id_str for v in self.region_tree.central_region.get_perimeter_verts()])
+                warnings.warn("Central region has no interior lining verts to start walk from.")
+                return # No valid starting verts indicates region with one vert
             start_vert = random.choice(list(self.region_tree.central_region.get_interior_lining_verts()))
             self.walk_division_from(self.region_tree.central_region, start_vert)
 
