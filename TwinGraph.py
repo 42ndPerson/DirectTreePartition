@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Set, Dict, Optional, Generator
 from enum import Enum
+import sys
 
 from collections import deque
 
@@ -66,6 +67,7 @@ class TwinGraph:
         self.construct_dual()
 
         # Construct map trees
+        sys.setrecursionlimit(2*len(self.primalVerts)) # Increase recursion limit to allow deep recursions in large graphs
         self.primalMap = self.generate_map_tree(next(iter(self.primalVerts)), TwinGraph.VertRole.PRIMAL) #TODO: Find better start vert for primal
         self.dual = self.generate_map_tree(next(iter(self.dualVerts)), TwinGraph.VertRole.DUAL)
 

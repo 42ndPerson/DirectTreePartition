@@ -46,6 +46,26 @@ class GraphNav:
             start_vert = random.choice(list(self.region_tree.central_region.get_interior_lining_verts()))
             self.walk_division_from(self.region_tree.central_region, start_vert)
 
+        if self.region_tree.edge_center is not None:
+            loop = self.traverse_clockwise_loop(self.region_tree.edge_center.twin_graph_edge, TwinGraph.EdgeDir.AB, {self.region_tree.edge_center.twin_graph_edge})
+            loop_edges = [edge for edge, _ in loop]
+            # Remove any edge that appears more than once in the loop to remove non-diving parts of the tree
+            seen = set()
+            duplicates = {self.region_tree.edge_center.twin_graph_edge} # Start with the door_edge in duplicates so it's always removed
+            for edge in loop_edges: # First pass: find all duplicated edges
+                if edge in seen:
+                    duplicates.add(edge)
+                else:
+                    seen.add(edge)
+            loop_edges = [edge for edge in loop_edges if edge not in duplicates] # Second pass: build the new list, excluding all identified duplicates
+            if self.animating:
+                boundary = [
+                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0) # Highlight edges in loop
+                    for edge in loop_edges
+                ]
+                boundary.append((self.region_tree.edge_center.twin_graph_edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 1)) # Highlight door edge specially
+                self.animation_tracks[0].append(boundary)
+
     def walk_division_from(self, region_in: Optional[RegionTree.Region], start_vert: TwinGraph.Vert):
         """
         Perform a walk and region tree update
@@ -217,7 +237,7 @@ class GraphNav:
         # tree vertex).  Build this so as to replace the region passed in.  Build new
         # region tree vertices for each loop found, starting from start_edge
 
-        loop = self.traverse_clockwise_loop(start_edge, start_dir)
+        loop = self.traverse_clockwise_loop(start_edge, start_dir, self.bridge_edges)
         region_weight = self.graph.count_primal_verts_within_perim(loop)
         root_region = RegionTree.Region(region_weight, loop)
         self.region_tree.add_region(root_region) # Automatically handles region registration
@@ -264,7 +284,7 @@ class GraphNav:
         
         return new_regions
 
-    def traverse_clockwise_loop(self, start_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir) -> List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]:
+    def traverse_clockwise_loop(self, start_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir, bridge_boundaries: Set[TwinGraph.QuadEdge]) -> List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]:
         """
         Traverses a clockwise loop within the tree and bridge edges, starting from start_edge.
         Returns the list of visited edges in order.
@@ -301,7 +321,7 @@ class GraphNav:
 
                 # print("At vert", current_vert.id_str, "checking edge to", next_edge.get_dual_dest_from(current_vert)[0].id_str, "along", next_edge.get_dual_rad_from(current_vert)[0])
 
-                if next_edge in self.tree_edges or next_edge in self.bridge_edges:
+                if next_edge in self.tree_edges or next_edge in bridge_boundaries:
                     break
             current_edge = next_edge
             current_dir = next_dir
