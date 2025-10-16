@@ -35,6 +35,12 @@ class GraphNav:
         self.animating = True
         self.animation_tracks = [[[]], [[]]] # One track for walk, one for region finding
 
+    def run_two_split_attempt(self):
+        while self.region_tree.central_region is not None and self.region_tree.edge_center is None:
+            # Select random starting vert within central region
+            start_vert = random.choice(list(self.region_tree.central_region.get_interior_lining_verts()))
+            self.walk_division_from(self.region_tree.central_region, start_vert)
+
     def walk_division_from(self, region_in: Optional[RegionTree.Region], start_vert: TwinGraph.Vert):
         """
         Perform a walk and region tree update
@@ -57,6 +63,8 @@ class GraphNav:
         # Build walk than progressively discover regions
         region_edge = self.loop_erased_random_walk_from(start_vert)
         new_regions = self.develop_region(region, region_edge, TwinGraph.EdgeDir.AB) # Ok to start in arbitrary direction because loop is starting from boundary rather than bridge, so equivalent connections occur from either side
+        for new_region in new_regions:
+            new_region.generate_cc_region_edges() # Ensure cc_region_edges is populated before validate_split_possible is called
         for new_region in new_regions:
             new_region.check_center() # Identify region center
 
@@ -140,12 +148,16 @@ class GraphNav:
             # Animation tracking
             if self.animating:
                 # Convert walk_edges to the expected tuple format
+                if self.region_tree.central_region is not None:
+                    perimeter_edges = self.region_tree.central_region.get_perimeter_edges()
+                else:
+                    perimeter_edges = set()
                 walk_tuples = [
-                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0)  # Replace FORWARD with actual direction if needed
+                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0 if edge not in perimeter_edges else 2)  # Replace FORWARD with actual direction if needed
                     for edge in walk_edges
                 ]
                 tree_tuples = [
-                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0)  # Replace FORWARD with actual direction if needed
+                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0 if edge not in perimeter_edges else 2)  # Replace FORWARD with actual direction if needed
                     for edge in self.tree_edges
                 ]
                 self.animation_tracks[0].append(walk_tuples + tree_tuples)
@@ -244,7 +256,6 @@ class GraphNav:
 
                 self.region_tree.add_edge(new_region_edge) # Automatically handles edge registration
                 new_region_edge.calculate_weight_differential_from_dir(TwinGraph.EdgeDir.AB) # Use AB to get info from other_region side as it is already developed
-
         
         return new_regions
 

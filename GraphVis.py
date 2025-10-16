@@ -148,6 +148,8 @@ class GraphVis:
                         displaying_dual_annotations = not displaying_dual_annotations
                     if event.key == pg.K_c:
                         displaying_central_region = not displaying_central_region
+                    if event.key == pg.K_q:
+                        self.graph_nav_dual.run_two_split_attempt()
                     if pg.K_1 <= event.key <= pg.K_9: # Select animation track
                         idx = event.key - pg.K_1
                         if idx < len(animation_deck):
@@ -348,6 +350,8 @@ class GraphVis:
                             src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
                             src, dest = self.point_pair_graph_to_window(src, dest)
                             pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
+                        for vert in selected_region.get_interior_lining_verts():
+                            pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(vert.point).tuple(), 5)
 
             # Push to screen
             pg.display.flip()

@@ -22,7 +22,7 @@ def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[floa
 
     return points, weights, edgeIdxs
 
-points, weights, edge_idxs = generate_grid_graph(25,25)
+points, weights, edge_idxs = generate_grid_graph(26,26)
 graph = TwinGraph(points, weights, edge_idxs)
 region_tree = RegionTree(graph)
 graph_nav = GraphNav(graph, region_tree)
