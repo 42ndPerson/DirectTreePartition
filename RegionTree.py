@@ -1,5 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Set
+from enum import Enum
+import warnings
 
 from TwinGraph import *
 from Euclid import *
@@ -9,6 +11,10 @@ class RegionTree:
     edges: Set[RegionTree.Edge]
 
     graph: TwinGraph
+
+    # Central region and edge
+    central_region: RegionTree.Region
+    edge_center: Optional[RegionTree.Edge]
 
     # Instance labeling
     instance_counter: int = 0
@@ -32,12 +38,16 @@ class RegionTree:
 
         self.graph = graph
 
+        self.central_region = next(iter(self.regions))
+        self.edge_center = None
+
         self.id_str = f"RTree{RegionTree.instance_counter}"
         RegionTree.instance_counter += 1
 
     def add_region(self, vert: RegionTree.Region) -> None: 
         print("Adding region", vert.id_str, "-----") 
-        self.regions.add(vert)  
+        self.regions.add(vert) 
+        vert.region_tree = self
 
     def remove_region(self, vert: RegionTree.Region) -> None:
         print("Removing region", vert.id_str, "-----")
@@ -45,11 +55,16 @@ class RegionTree:
             self.remove_edge(edge)
         self.regions.remove(vert)
 
+        if vert == self.central_region:
+            self.central_region = None
+            print("Central region removed, no central region now set.")
+
     def add_edge(self, edge: RegionTree.Edge) -> None:
         print("Adding edge", edge.id_str, "with twin", edge.twin_graph_edge.id_str)
         self.edges.add(edge)
         edge.end_A.register_edge(edge)
         edge.end_B.register_edge(edge)
+        edge.region_tree = self
 
     def remove_edge(self, edge: RegionTree.Edge) -> None:
         print("Removing edge", edge.id_str, "with twin", edge.twin_graph_edge.id_str)
@@ -79,20 +94,26 @@ class RegionTree:
                 print("    ", "Edge found in bridge_to_region_edge_map of", region.id_str)
 
     class Region:
-        weight: float # Total weight of the region
+        # Attributes
+        weight: int # Total weight of the region
         dual_perimeter: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]] # Edges that define the perimeter of the region in the dual graph
 
+        # Connections
         region_edges: Set[RegionTree.Edge] # Region tree edges connected to this vertex
         bridge_set: Set[TwinGraph.QuadEdge] # Edges that, if removed, would disconnect the primal tree
         bridge_to_region_edge_map: Dict[TwinGraph.QuadEdge, RegionTree.Edge] # Map from bridge edges to region tree edges
 
+        # Tree
+        region_tree: RegionTree # Must be set when region is added to tree
+
+        # Visualization
         point: Point
 
         # Instance labeling
         instance_counter: int = 0
         id_str: str
 
-        def __init__(self, weight: float, dual_perimeter: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]) -> None:
+        def __init__(self, weight: int, dual_perimeter: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]) -> None:
             self.weight = weight
             self.dual_perimeter = dual_perimeter
 
@@ -134,57 +155,6 @@ class RegionTree:
                 self.point = Point(0.0, 0.0)
             else:
                 self.point = Point(x_sum / scaling, y_sum / scaling)
-
-        # def get_all_dual_verts_contained_by_perimeter(self, graph: TwinGraph) -> Set[TwinGraph.Vert]:
-        #     # Conduct a flood fill from one of the perimeter edges to find all dual verts to one
-        #     #  side of the perimeter.  Then, check which side of the perimeter the external dual 
-        #     #  vert is on and return the converse set of verts.
-        #     if len(self.dual_perimeter) == 0:
-        #         print("BBB")
-        #         return graph.dualVerts
-
-        #     # Get all verts in the perimeter
-        #     perimeter_verts = self.get_perimeter_verts()
-            
-        #     # Use flood fill from the first perimeter edge's dual vert
-        #     visited: Set[TwinGraph.Vert] = set()
-        #     queue: List[TwinGraph.Vert] = []
-
-        #     # Start from the dual vert of the first perimeter edge
-        #     start_edge, _ = self.dual_perimeter[0]
-
-        #     # Pick one of the dual verts (AB or BA)
-        #     start_dual_vert = start_edge.dual_AB if start_edge.dual_AB is not None else start_edge.dual_BA
-        #     if start_dual_vert is None:
-        #         return set()
-        #     queue.append(start_dual_vert)
-        #     while queue:
-        #         vert = queue.pop()
-        #         if vert in visited:
-        #             continue
-        #         visited.add(vert)
-                
-        #         # Add all adjacent dual verts via cc_edges
-        #         for edge in vert.cc_edges:
-        #             # Get the other dual vert on this edge
-        #             if edge.dual_AB == vert and edge.dual_BA is not None:
-        #                 neighbor = edge.dual_BA
-        #             elif edge.dual_BA == vert and edge.dual_AB is not None:
-        #                 neighbor = edge.dual_AB
-        #             else:
-        #                 continue
-        #             # Only add if not crossing the perimeter
-        #             if neighbor not in perimeter_verts and neighbor not in visited:
-        #                 queue.append(neighbor)
-
-        #     print("!!!: ", graph.external_dual_vert in visited, len(visited))
-
-        #     # If the external dual vert is in visited, we want the other side
-        #     if graph.external_dual_vert in visited:
-        #         # Return all dual verts not in visited
-        #         return set(graph.dualVerts) - visited - perimeter_verts
-        #     else:
-        #         return visited - perimeter_verts
             
         def get_perimeter_verts(self) -> Set[TwinGraph.Vert]:
             verts = set()
@@ -192,12 +162,55 @@ class RegionTree:
                 src, _ = edge.get_dual_vert_pair(dir)
                 verts.add(src)
             return verts
+        
+        # def check_center(self) -> bool:
+        #     edge = next(iter(self.region_edges))
+        #     if edge.ab_weight_differential is None:
+        #         raise ValueError("RegionTree.Region.check_center found edge with undefined ab_weight_differential.")
+            
+        #     opposite_weight = edge.get_opposite_side_weight(self)
+        #     midpoint_weight = self.region_tree.graph.total_primal_weight / 2
+        #     if opposite_weight is None:
+        #         raise ValueError("RegionTree.Region.check_center found edge with undefined opposite side weight.")
+        #     elif opposite_weight < midpoint_weight and opposite_weight + self.weight > midpoint_weight:
+        #         return True
+
+        #     return False
+
+        # TODO: Add sweeping technique for early exit, described in paper prop 3.8
+        def check_center(self):
+            is_center = True
+
+            for edge in self.region_edges:
+                if edge.ab_weight_differential is None:
+                    warnings.warn("RegionTree.Region.check_center found edge with undefined ab_weight_differential.")
+                    continue
+                
+                opposite_weight = edge.get_opposite_side_weight(self)
+                midpoint_weight = self.region_tree.graph.total_primal_weight / 2
+                if opposite_weight is None:
+                    warnings.warn("RegionTree.Region.check_center found edge with undefined opposite side weight.")
+                    continue
+                elif opposite_weight >= midpoint_weight:
+                    is_center = False
+                print(f"Edge {edge.id_str} opposite weight {opposite_weight}, midpoint {midpoint_weight}, region weight {self.weight}")
+
+            if is_center:
+                self.region_tree.central_region = self
+                print("Region", self.id_str, "is central region of region tree", self.region_tree.id_str, "with", self.weight, "weight.")
+
+        def validate_split_possible(self, edge: RegionTree.Edge) -> None:
+            pass
 
     class Edge:
         # Edge A and B ends must match directionally with underlying twin_graph_edge
         end_A: RegionTree.Region
         end_B: RegionTree.Region
         twin_graph_edge: TwinGraph.QuadEdge
+        ab_weight_differential: Optional[int] # Difference in weight between all regions on A side and all regions on B side (weight of A - weight of B)
+
+        # Tree
+        region_tree: RegionTree # Must be set when edge is added to tree
 
         # Instance labeling
         instance_counter: int = 0
@@ -222,3 +235,56 @@ class RegionTree:
             src_rad = self.twin_graph_edge.get_dual_rad_along(dir)
 
             return (src_rad, dir)
+
+        # Get the total weight on the opposite side of the edge of the given region
+        # Returns None if ab_weight_differential is not yet calculated
+        def get_opposite_side_weight(self, src: RegionTree.Region) -> Optional[int]:
+            if self.ab_weight_differential is None:
+                return None
+            
+            assert (self.ab_weight_differential + self.region_tree.graph.total_primal_weight) % 2 == 0, "RegionTree.Edge ab_weight_differential and graph total_primal_weight do not sum to an even number, cannot divide by 2 cleanly to get total weight a."
+            assert (self.region_tree.graph.total_primal_weight - self.ab_weight_differential) % 2 == 0, "RegionTree.Edge region_tree.graph total_primal_weight and ab_weight_differential do not subtract to an even number, cannot divide by 2 cleanly to get total weight b."
+
+            total_weight_a = (self.ab_weight_differential + self.region_tree.graph.total_primal_weight) // 2
+            total_weight_b = (self.region_tree.graph.total_primal_weight - self.ab_weight_differential) // 2
+
+            if src == self.end_A:
+                return total_weight_b
+            elif src == self.end_B:
+                return total_weight_a
+            else:
+                raise KeyError("Src for get_opposite_side_weight is not on edge.")
+
+        # Calculate the weight differential based on the side of the graph pointed to by dir
+        def calculate_weight_differential_from_dir(self, dir: TwinGraph.EdgeDir) -> None:
+            if dir == TwinGraph.EdgeDir.BA:
+                side_A_weight = self.end_A.weight
+                for edge in self.end_A.region_edges - {self}:
+                    weight = edge.get_opposite_side_weight(self.end_A)
+                    if weight is not None:
+                        side_A_weight += weight
+                    else:
+                        raise ValueError("Cannot calculate weight differential, side A of edge has undefined weight.")
+                side_B_weight = self.region_tree.graph.total_primal_weight - side_A_weight
+            elif dir == TwinGraph.EdgeDir.AB:
+                side_B_weight = self.end_B.weight
+                for edge in self.end_B.region_edges - {self}:
+                    weight = edge.get_opposite_side_weight(self.end_B)
+                    if weight is not None:
+                        side_B_weight += weight
+                    else:
+                        raise ValueError("Cannot calculate weight differential, side B of edge has undefined weight.")
+                side_A_weight = self.region_tree.graph.total_primal_weight - side_B_weight
+
+            self.ab_weight_differential = side_A_weight - side_B_weight
+
+            # Check for edge center
+            if self.ab_weight_differential == 0:
+                if self.region_tree.edge_center is not None:
+                    raise ValueError("Cannot set edge as edge center, region tree already has edge center.")
+
+                self.region_tree.edge_center = self
+                print("Edge", self.id_str, "is edge center of region tree", self.region_tree.id_str)
+
+
+            

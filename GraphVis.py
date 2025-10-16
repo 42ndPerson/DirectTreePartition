@@ -49,6 +49,7 @@ class GraphVis:
         displaying_labels = False
         displaying_region_tree = False
         displaying_perimeters = False
+        displaying_central_region = False
         selected_vert: Optional[TwinGraph.Vert] = None
 
         # Animation
@@ -145,6 +146,8 @@ class GraphVis:
                         displaying_perimeters = not displaying_perimeters
                     if event.key == pg.K_a:
                         displaying_dual_annotations = not displaying_dual_annotations
+                    if event.key == pg.K_c:
+                        displaying_central_region = not displaying_central_region
                     if pg.K_1 <= event.key <= pg.K_9: # Select animation track
                         idx = event.key - pg.K_1
                         if idx < len(animation_deck):
@@ -283,6 +286,13 @@ class GraphVis:
                     color = GraphVis.DrawColors.purple
                 pg.draw.line(screen, color, src.tuple(), dest.tuple(), 5)
 
+            # Highlight central region
+            if displaying_central_region and self.region_tree.central_region is not None:
+                for edge, dir in self.region_tree.central_region.dual_perimeter:
+                    src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+                    src, dest = self.point_pair_graph_to_window(src, dest)
+                    pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
+
             # Draw vertex labels
             if displaying_labels:
                 if displaying_primal and not displaying_dual:
@@ -302,6 +312,12 @@ class GraphVis:
 
                     src, dest = self.point_pair_graph_to_window(edge.end_A.point, edge.end_B.point)
                     pg.draw.aaline(screen, GraphVis.DrawColors.green if not alert else GraphVis.DrawColors.orange, src.tuple(), dest.tuple(), blend=10)
+
+                    if edge.ab_weight_differential is not None:
+                        mid_x = (src.x + dest.x) / 2
+                        mid_y = (src.y + dest.y) / 2
+                        label_surface = font.render(f"{edge.ab_weight_differential:.0f}", True, GraphVis.DrawColors.red if not alert else GraphVis.DrawColors.orange)
+                        screen.blit(label_surface, (mid_x+2, mid_y+2))
                 for region in self.region_tree.regions:
                     region_pos = self.point_graph_to_window(region.point)
                     label_surface = font.render(str(region.weight), True, GraphVis.DrawColors.white)

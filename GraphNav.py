@@ -10,7 +10,7 @@ from TwinGraph import *
 from RegionTree import *
 
 class GraphNav:
-    lockout = False
+    debug_lockout = False
 
     graph: TwinGraph
 
@@ -56,9 +56,14 @@ class GraphNav:
 
         # Build walk than progressively discover regions
         region_edge = self.loop_erased_random_walk_from(start_vert)
-        self.develop_region(region, region_edge, TwinGraph.EdgeDir.AB) # Ok to start in arbitrary direction because loop is starting from boundary rather than bridge, so equivalent connections occur from either side
-        
+        new_regions = self.develop_region(region, region_edge, TwinGraph.EdgeDir.AB) # Ok to start in arbitrary direction because loop is starting from boundary rather than bridge, so equivalent connections occur from either side
+        for new_region in new_regions:
+            new_region.check_center() # Identify region center
+
         self.region_tree.remove_region(region) # Remove old region
+
+        print("Central vertex:", self.region_tree.central_region.id_str if self.region_tree.central_region is not None else "None")
+        print("Edge center:", self.region_tree.edge_center.id_str if self.region_tree.edge_center is not None else "None")
 
     def get_enclosing_perimeter_verts(self, vert: TwinGraph.Vert) -> Set[TwinGraph.Vert]:
         """
@@ -187,7 +192,7 @@ class GraphNav:
         # Return edge that began the walk (which is gauranteed to be internal to the region)
         return walk_edges[0]
 
-    def develop_region(self, src_region: RegionTree.Region, start_edge: TwinGraph.QuadEdge, start_dir: TwinGraph.EdgeDir) -> RegionTree.Region:
+    def develop_region(self, src_region: RegionTree.Region, start_edge: TwinGraph.QuadEdge, start_dir: TwinGraph.EdgeDir) -> List[RegionTree.Region]:
         # Recursively perform clockwise loops from the start_edge, when a loop crosses a 
         # bridge edge, start a new clockwise loop from the other side of the bridge edge 
         # if the bridge edge is in new doors.  With every completed loop, create a new 
@@ -199,39 +204,18 @@ class GraphNav:
         region_weight = self.graph.count_primal_verts_within_perim(loop)
         root_region = RegionTree.Region(region_weight, loop)
         self.region_tree.add_region(root_region) # Automatically handles region registration
-        print("Loop:", [f"{edge.id_str} ({dir.name})" for edge, dir in loop])
 
-        if GraphNav.lockout:
-            return root_region
+        if GraphNav.debug_lockout:
+            return [root_region]
 
+        new_regions: List[RegionTree.Region] = [root_region]
         for edge, dir in loop:
+            # Build edges between new regions within the old src_region
             if edge in self.bridge_edges and edge not in src_region.bridge_set and edge != start_edge:
                 # Start a new clockwise loop from the other side of the bridge edge
-                try:
-                    neighbor_region = self.develop_region(src_region, edge, dir.reverse())
-                    if GraphNav.lockout:
-                        return root_region
-                except RecursionError:
-                    if sys.platform != 'darwin':
-                        print("This function is intended for macOS only.")
-                        return
-
-                    try:
-                        # The AppleScript command to activate the Terminal application
-                        script = 'tell application "Terminal" to activate'
-                        
-                        # Execute the command using subprocess
-                        # check=True will raise an exception if the command fails
-                        subprocess.run(['osascript', '-e', script], check=True)
-                        
-                    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-                        # Handle potential errors, like osascript not being found
-                        # or the script failing to execute.
-                        print(f"Error bringing Terminal to the front: {e}")
-
-                    print("Recursion depth exceeded during region development. Possible infinite loop.")
-                    GraphNav.lockout = True
-                    return root_region
+                child_regions = self.develop_region(src_region, edge, dir.reverse())
+                new_regions.extend(child_regions)
+                neighbor_region = child_regions[0] # The first returned region is the one on the other side of the bridge edge
 
                 # Link the new region tree vertex to the neighbor region tree vertex
                 new_region_edge = RegionTree.Edge()
@@ -240,25 +224,29 @@ class GraphNav:
                 new_region_edge.twin_graph_edge = edge
 
                 self.region_tree.add_edge(new_region_edge) # Automatically handles edge registration
+                new_region_edge.calculate_weight_differential_from_dir(TwinGraph.EdgeDir.AB)
 
+            # Update any existing bridge edges that link to outside src_region to link to root_region instead
             if edge in self.bridge_edges and edge in src_region.bridge_set:# and edge != start_edge:
                 # Edge is a bridge to src_region, replace old link to src_region with new link to root_region
                 old_region_edge = src_region.bridge_to_region_edge_map[edge]
                 other_region, _ = old_region_edge.get_dest_from(src_region)
                 # Tempting to think that it is not necessary to unregister old edge because region is being deleted
                 #  However, that leads to an order of operations where the new edge is added and registered under its
-                #  twin in the bridge_to_region_edge_map before an old edge is removed that can then delete the new
+                #  twin in the bridge_to_region_edge_map before old edge is removal which can then delete the new
                 #  entry from the map.  So, removal here is necessary.
                 self.region_tree.remove_edge(old_region_edge)
 
                 new_region_edge = RegionTree.Edge()
-                new_region_edge.end_A = root_region
+                new_region_edge.end_A = root_region # TODO: Investigate whether directional alignments between region and twin edges is maintained / necessary
                 new_region_edge.end_B = other_region
                 new_region_edge.twin_graph_edge = edge
 
                 self.region_tree.add_edge(new_region_edge) # Automatically handles edge registration
+                new_region_edge.calculate_weight_differential_from_dir(TwinGraph.EdgeDir.AB) # Use AB to get info from other_region side as it is already developed
 
-        return root_region
+        
+        return new_regions
 
     def traverse_clockwise_loop(self, start_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir) -> List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]:
         """

@@ -286,6 +286,12 @@ class TwinGraph:
                     vert.in_edge.twin_edge.dual_AB_annotation = -vert.twin_vert.weight + cycle_sum
 
     def count_primal_verts_within_perim(self, perim: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]) -> int:
+        """
+        Counts the total weight of primal vertices enclosed by a given perimeter of dual edges.
+        Assumes the perimeter is oriented clockwise.
+        Treats an empty perimeter as enclosing the whole graph.
+        :param perim: List of (QuadEdge, EdgeDir) tuples defining the perimeter.
+        """
         # Must take list and not set as input to allow pendants in perim to self-cancel
 
         # Empty perimeter denotes the whole graph
@@ -303,6 +309,11 @@ class TwinGraph:
 
         if perim_weight < 0:
             return perim_weight%self.total_primal_weight
+        elif perim_weight == 0:
+            # This case accounts for perimeters that enclose no area, such as pendants that self-cancel
+            #  This case is somewhat fraught however, as it is ambiguous whether the perimeter encloses all or none of the graph
+            #  This should not be a problem for this project, as we should never clockwise enclose no area, but it could cause confusion in other applications
+            return self.total_primal_weight
         elif perim_weight <= self.total_primal_weight:
             return perim_weight
         else:
@@ -387,7 +398,7 @@ class TwinGraph:
             if self.role.is_primal():
                 edges.sort(key=lambda edge: edge.get_primal_rad_from(self)[0])
             if self.role.is_dual():
-                edges.sort(key=lambda edge: edge.get_dual_rad_from(self)[0])
+                edges.sort(key=lambda edge: edge.get_dual_rad_from(self)[0]) # TODO: Switch to system pulling order from face loops, as this solution relies on dual vert point accuracy
 
                 # Exterior dual vert must have edges in reverse order
                 if self.role == TwinGraph.VertRole.DUAL_EXTERIOR:
@@ -493,7 +504,7 @@ class TwinGraph:
 
             angle %= 2 * math.pi # Normalize angle to [0, 2pi]
             return (angle, dir)
-        def get_dual_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]:
+        def get_dual_rad_from(self, src: TwinGraph.Vert) -> Tuple[float, TwinGraph.EdgeDir]: # TODO: Confirm no use in general project, as it relies on dual vert point accuracy
             dest, dir = self.get_dual_dest_from(src)
             if src == dest:
                 raise ValueError("Src and dest are the same in get_dual_rad_from, cannot compute angle.")
@@ -519,7 +530,7 @@ class TwinGraph:
         # Get the angle of the edge traveling in a given dir  
         def get_primal_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
             return self.get_primal_rad_from(self.primal_A if dir == TwinGraph.EdgeDir.AB else self.primal_B)[0]
-        def get_dual_rad_along(self, dir: TwinGraph.EdgeDir) -> float:
+        def get_dual_rad_along(self, dir: TwinGraph.EdgeDir) -> float: # TODO: Confirm no use in general project, as it relies on dual vert point accuracy
             if self.dual_AB is None or self.dual_BA is None:
                 raise ValueError("Dual vertices not set for this edge.")
             return self.get_dual_rad_from(self.dual_AB if dir == TwinGraph.EdgeDir.AB else self.dual_BA)[0]
