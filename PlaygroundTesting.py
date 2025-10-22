@@ -5,7 +5,7 @@ from TwinGraph import *
 from GraphVis import *
 from RegionTree import *
 
-def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[float], List[Tuple[int, int]]]:
+def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[int], List[Tuple[int, int]]]:
     points = []
     weights = []
     edgeIdxs = []
@@ -14,7 +14,7 @@ def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[floa
         for column in range(width):
             idx = row*width + column
             points.append(Point(column, row))
-            weights.append(1)#idx)
+            weights.append(1)
             if column != width-1:
                 edgeIdxs.append((idx, idx+1))
             if row != height-1:
@@ -22,7 +22,7 @@ def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[floa
 
     return points, weights, edgeIdxs
 
-points, weights, edge_idxs = generate_grid_graph(20,20)
+points, weights, edge_idxs = generate_grid_graph(10,10)
 graph = TwinGraph(points, weights, edge_idxs)
 region_tree = RegionTree(graph)
 graph_nav = GraphNav(graph, region_tree)

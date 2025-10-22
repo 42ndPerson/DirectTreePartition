@@ -1,8 +1,6 @@
 from __future__ import annotations
 from typing import List, Tuple, Set, Optional
-
-import subprocess
-import sys
+from collections import deque
 
 import random # TODO: Confirm pseudo-randomness is acceptable
 
@@ -10,6 +8,8 @@ from TwinGraph import *
 from RegionTree import *
 
 class GraphNav:
+    __slots__ = ('graph', 'region_tree', 'tree_verts', 'tree_edges', 'bridge_edges', 'animating', 'animation_tracks')
+
     debug_lockout = False
 
     graph: TwinGraph
@@ -35,36 +35,43 @@ class GraphNav:
         self.animating = True
         self.animation_tracks = [[[]], [[]]] # One track for walk, one for region finding
 
-    def run_two_split_attempt(self):
+    def run_two_split_attempt(self) -> Optional[List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]]:
         while self.region_tree.central_region is not None and self.region_tree.edge_center is None:
             # Select random starting vert within central region
-            if len(self.region_tree.central_region.get_interior_lining_verts()) == 0:
-                print("Central region:", self.region_tree.central_region.id_str)
-                print("Central region perimeter verts:", [v.id_str for v in self.region_tree.central_region.get_perimeter_verts()])
+            lining_verts = self.region_tree.central_region.get_interior_lining_verts()
+            if len(lining_verts) == 0:
                 warnings.warn("Central region has no interior lining verts to start walk from.")
-                return # No valid starting verts indicates region with one vert
-            start_vert = random.choice(list(self.region_tree.central_region.get_interior_lining_verts()))
+                return None # No valid starting verts indicates region with one vert
+            start_vert = random.choice(list(lining_verts))
+            # start_vert = self.region_tree.central_region.get_uniform_interior_vert()
             self.walk_division_from(self.region_tree.central_region, start_vert)
-
+            
         if self.region_tree.edge_center is not None:
             loop = self.traverse_clockwise_loop(self.region_tree.edge_center.twin_graph_edge, TwinGraph.EdgeDir.AB, {self.region_tree.edge_center.twin_graph_edge})
-            loop_edges = [edge for edge, _ in loop]
+
             # Remove any edge that appears more than once in the loop to remove non-diving parts of the tree
-            seen = set()
-            duplicates = {self.region_tree.edge_center.twin_graph_edge} # Start with the door_edge in duplicates so it's always removed
-            for edge in loop_edges: # First pass: find all duplicated edges
-                if edge in seen:
-                    duplicates.add(edge)
-                else:
-                    seen.add(edge)
-            loop_edges = [edge for edge in loop_edges if edge not in duplicates] # Second pass: build the new list, excluding all identified duplicates
             if self.animating:
+                loop_edges = [edge for edge, _ in loop]
+
+                seen = set()
+                duplicates = {self.region_tree.edge_center.twin_graph_edge} # Start with the door_edge in duplicates so it's always removed
+                for edge in loop_edges: # First pass: find all duplicated edges
+                    if edge in seen:
+                        duplicates.add(edge)
+                    else:
+                        seen.add(edge)
+                loop_edges = [edge for edge in loop_edges if edge not in duplicates] # Second pass: build the new list, excluding all identified duplicates
+
                 boundary = [
                     (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0) # Highlight edges in loop
                     for edge in loop_edges
                 ]
                 boundary.append((self.region_tree.edge_center.twin_graph_edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 1)) # Highlight door edge specially
                 self.animation_tracks[0].append(boundary)
+
+            return loop
+        else:
+            return None
 
     def walk_division_from(self, region_in: Optional[RegionTree.Region], start_vert: TwinGraph.Vert):
         """
@@ -83,7 +90,7 @@ class GraphNav:
                 raise ValueError("Starting vert is not contained in any region.")
         else:
             region = region_in
-        print("Starting walk division from region", region.id_str, "at vert", start_vert.id_str)
+        # print("Starting walk division from region", region.id_str, "at vert", start_vert.id_str)
 
         # Build walk than progressively discover regions
         region_edge = self.loop_erased_random_walk_from(start_vert)
@@ -95,8 +102,8 @@ class GraphNav:
 
         self.region_tree.remove_region(region) # Remove old region
 
-        print("Central vertex:", self.region_tree.central_region.id_str if self.region_tree.central_region is not None else "None")
-        print("Edge center:", self.region_tree.edge_center.id_str if self.region_tree.edge_center is not None else "None")
+        # print("Central vertex:", self.region_tree.central_region.id_str if self.region_tree.central_region is not None else "None")
+        # print("Edge center:", self.region_tree.edge_center.id_str if self.region_tree.edge_center is not None else "None")
 
     def get_enclosing_perimeter_verts(self, vert: TwinGraph.Vert) -> Set[TwinGraph.Vert]:
         """
@@ -120,9 +127,9 @@ class GraphNav:
         perim: Set[TwinGraph.Vert] = set()
 
         visited: Set[TwinGraph.Vert] = set()
-        queue: List[TwinGraph.Vert] = [vert]
+        queue: deque[TwinGraph.Vert] = deque([vert])
         while len(queue) > 0:
-            current = queue.pop(0)
+            current = queue.popleft()
             visited.add(current)
 
             for edge in current.cc_edges:
@@ -136,11 +143,51 @@ class GraphNav:
 
         return perim
 
+    def get_enclosed_primal_verts(self, perim: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]) -> Set[TwinGraph.Vert]:
+            """
+            Given a perimeter defined by a clockwise loop of dual edges,
+            find all primal verts enclosed by that perimeter.  The perimeter
+            may not cross itself and must fully enclose at least one primal 
+            vert.
+            """ # Necessary assumption for all internal primal verts to be connected
+            perim_set = set(edge for edge, _ in perim)
+
+            # Find a starting primal vert inside the perimeter
+            start_primal: Optional[TwinGraph.Vert] = None
+            next_edge = perim[0][0].dual_AB_cc_next # Clockwise cell from src_edge contains interior primal
+            src_primals = perim[0][0].get_primal_vert_pair(TwinGraph.EdgeDir.AB)
+            next_primals = next_edge.get_primal_vert_pair(TwinGraph.EdgeDir.AB)
+            if src_primals[0] in next_primals:
+                start_primal = src_primals[0]
+            elif src_primals[1] in next_primals:
+                start_primal = src_primals[1]
+
+            if start_primal is None:
+                raise ValueError("RegionTree.Region.get_enclosed_primal_verts could not find starting primal vert inside perimeter.")
+
+            # Conduct Depth First Exploration to collect all enclosed primal verts
+            enclosed: Set[TwinGraph.Vert] = set()
+
+            visited: Set[TwinGraph.Vert] = set()
+            queue: List[TwinGraph.Vert] = [start_primal]
+            while len(queue) > 0:
+                current = queue.pop(0)
+                visited.add(current)
+                enclosed.add(current)
+
+                for edge in current.cc_edges:
+                    if edge not in perim_set:
+                        dest, _ = edge.get_primal_dest_from(current)
+                        if dest not in visited and dest not in queue:
+                            queue.append(dest)
+
+            return enclosed
+
     def loop_erased_random_walk_from(self, vert: TwinGraph.Vert) -> TwinGraph.QuadEdge:
         assert vert not in self.tree_verts, "Starting vert is already in tree."
 
-        # Check vert is dual
-        if vert.role != TwinGraph.VertRole.DUAL:
+        # Confirm vert is dual
+        if not vert.role.is_dual():
             raise ValueError("Starting vert role does not match graph_selection.")
 
         # Walk state
@@ -275,7 +322,7 @@ class GraphNav:
                 self.region_tree.remove_edge(old_region_edge)
 
                 new_region_edge = RegionTree.Edge()
-                new_region_edge.end_A = root_region # TODO: Investigate whether directional alignments between region and twin edges is maintained / necessary
+                new_region_edge.end_A = root_region # TODO: Investigate whether directional alignments between region and twin edges are maintained / necessary
                 new_region_edge.end_B = other_region
                 new_region_edge.twin_graph_edge = edge
 
@@ -298,8 +345,11 @@ class GraphNav:
 
         # Mark start vert
         start_vert = current_vert
-
+        
+        outer_count = 0
+        inner_count = 0
         while True:
+            outer_count += 1
             # Move to the next vert along the current edge and direction
             current_vert, current_dir = current_edge.get_dual_dest_from(current_vert)
             visited_edges.append((current_edge, current_dir))
@@ -313,6 +363,7 @@ class GraphNav:
             next_edge = current_edge
             next_dir = current_dir
             while True:
+                inner_count += 1
                 if current_vert == next_edge.dual_BA:
                     next_edge = next_edge.dual_BA_cc_next
                 else:
@@ -329,6 +380,7 @@ class GraphNav:
             # Check if we've looped back to the start
             if current_edge == start_edge and current_vert == start_vert:
                 break
-
+        
+        # print(f"Outer loop iterations: {outer_count}, Inner loop iterations: {inner_count}")
         return visited_edges
 

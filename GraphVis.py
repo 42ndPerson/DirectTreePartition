@@ -279,8 +279,6 @@ class GraphVis:
                     src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.PRIMAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                 else:
-                    if edge.dual_AB is None or edge.dual_BA is None:
-                        continue
                     src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                 

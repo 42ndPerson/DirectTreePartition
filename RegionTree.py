@@ -1,4 +1,5 @@
 from __future__ import annotations
+import random
 from typing import List, Tuple, Set
 from enum import Enum
 import warnings
@@ -7,6 +8,15 @@ from TwinGraph import *
 from Euclid import *
 
 class RegionTree:
+    __slots__ = (
+        'regions', 
+        'edges', 
+        'graph', 
+        'central_region', 
+        'edge_center',  
+        'id_str'
+    )
+
     regions: Set[RegionTree.Region]
     edges: Set[RegionTree.Edge]
 
@@ -32,7 +42,7 @@ class RegionTree:
         # We are able to omit the perimeter to solve this
         #  problem because the graph is finite, so all paths
         #  are contained naturally by the graph structure.
-        total_weight = sum(vert.weight for vert in graph.primalVerts)
+        total_weight = graph.total_primal_weight
         self.regions = set()
         self.add_region(RegionTree.Region(total_weight, [])) # Start with single region containing whole graph
         self.edges = set()
@@ -56,7 +66,6 @@ class RegionTree:
 
         if vert == self.central_region:
             self.central_region = None
-            print("Central region removed, no central region now set.")
 
     def add_edge(self, edge: RegionTree.Edge) -> None:
         self.edges.add(edge)
@@ -91,6 +100,18 @@ class RegionTree:
                 print("    ", "Edge found in bridge_to_region_edge_map of", region.id_str)
 
     class Region:
+        __slots__ = (
+            'weight', 
+            'dual_perimeter', 
+            'region_edges', 
+            'cc_region_edges', 
+            'bridge_set', 
+            'bridge_to_region_edge_map', 
+            'region_tree', 
+            'point', 
+            'id_str'
+        )
+
         # Attributes
         weight: int # Total weight of the region
         dual_perimeter: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]] # Edges that define the perimeter of the region in the dual graph
@@ -168,28 +189,98 @@ class RegionTree:
 
         def get_interior_lining_verts(self) -> Set[TwinGraph.Vert]:
             if len(self.dual_perimeter) == 0:
-                return self.region_tree.graph.dualVerts - {v for v in self.region_tree.graph.dualVerts if v.role == TwinGraph.VertRole.DUAL_EXTERIOR}
+                return {e.get_dual_dest_from(self.region_tree.graph.external_dual_vert)[0] 
+                        for e in self.region_tree.graph.external_dual_vert.cc_edges}
 
             full_perimeter_edges = self.get_perimeter_edges()
             lining_verts: Set[TwinGraph.Vert] = set()
 
-            for edge, dir in self.dual_perimeter:
+            direct_count = 0
+            for i, (edge, dir) in enumerate(self.dual_perimeter):
                 rotary_center: TwinGraph.Vert
-                if dir == TwinGraph.EdgeDir.AB and edge.dual_BA is not None:
-                    rotary_center = edge.dual_BA
-                elif dir == TwinGraph.EdgeDir.BA and edge.dual_AB is not None:
-                    rotary_center = edge.dual_AB
-                else:
-                    raise ValueError("RegionTree.Region.get_interior_lining_verts found edge with invalid direction or unassigned end dual verts in dual_perimeter.")
-                
+                _, rotary_center = edge.get_dual_vert_pair(dir)
+
                 working_edge = edge
                 while True:
                     working_edge, _ = working_edge.get_dual_cc_next_edge(rotary_center)
-                    if working_edge in full_perimeter_edges:
+                    if working_edge in full_perimeter_edges: 
                         break
+                    
+                    direct_count += 1
                     lining_verts.add(working_edge.get_dual_dest_from(rotary_center)[0])
-                        
+                    # Performance note: Set is absorbing ~50% double vert detections
+                    
             return lining_verts
+
+        def get_uniform_interior_vert(self) -> TwinGraph.Vert:
+            if len(self.dual_perimeter) == 0:
+                return random.choice(list(self.region_tree.graph.dualVerts))
+
+            full_perimeter_verts = [e.get_dual_vert_pair(dir)[0] for e, dir in self.dual_perimeter]
+            print("Perimeter Edges:", [e.id_str for e, _ in self.dual_perimeter])
+            print("Perim Verts:", [v.id_str for v in full_perimeter_verts])
+            print("Measured weight:", self.region_tree.graph.count_primal_verts_within_perim(self.dual_perimeter))
+            dual_tree_checkpoints: List[int] = []
+            dual_tree_checkpoints_map: Dict[int, TwinGraph.Vert] = {}
+
+            # Collect all entry and exit points to
+            for vert in full_perimeter_verts:
+                dual_tree_checkpoints.append(vert.map_tree_vert.dfs_in)
+                dual_tree_checkpoints.append(vert.map_tree_vert.dfs_out)
+                dual_tree_checkpoints_map[vert.map_tree_vert.dfs_in] = vert
+                dual_tree_checkpoints_map[vert.map_tree_vert.dfs_out] = vert
+            dual_tree_checkpoints.sort() # Put subranges gauranteed to be in the tree together and in order
+
+            # Select random
+            target_idx = random.randint(0, 2*self.weight) # TODO: Fix for scenario where weight is not 1
+
+            # Correct interior / exterior
+            # TODO: Add way to count number of dual verts in region, not primal weight
+            double_weight = 0
+            print(dual_tree_checkpoints)
+            for perim_idx in range(0, len(dual_tree_checkpoints), 2):
+                print(dual_tree_checkpoints[perim_idx], dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)])
+                double_weight += dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)] - dual_tree_checkpoints[perim_idx] - 1 # Subtract 1 to not count the perimeter verts
+            if double_weight != 2 * self.weight: # Inverts checkpoint ranges to get interior
+                assert self.region_tree.graph.total_primal_weight - (double_weight // 2) - len(full_perimeter_verts) == self.weight, f'RegionTree.Region.get_uniform_interior_vert found inconsistent weights during interior vert selection. double_weight: {double_weight}, region weight: {self.weight}, graph total weight: {self.region_tree.graph.total_primal_weight}'
+                dual_tree_checkpoints.insert(0, 0)
+                dual_tree_checkpoints.append(2 * self.region_tree.graph.total_primal_weight)
+
+            # Locate perimeter entry point
+            entry_vert: Optional[TwinGraph.Vert] = None
+            logical_range_covered = 0
+            print(dual_tree_checkpoints)
+            for perim_idx in range(0, len(dual_tree_checkpoints), 2):
+                range_start_checkpoint_idx = dual_tree_checkpoints[perim_idx]
+                range_end_checkpoint_idx = dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)]
+                new_logical_range_end = logical_range_covered + (range_end_checkpoint_idx - range_start_checkpoint_idx)
+
+                if target_idx > logical_range_covered and \
+                   target_idx < new_logical_range_end:
+                    continue
+                entry_vert = dual_tree_checkpoints_map[range_start_checkpoint_idx]
+
+                logical_range_covered = new_logical_range_end
+                break
+
+            # Traverse to interior
+            if entry_vert is None:
+                raise ValueError("RegionTree.Region.get_uniform_interior_vert could not locate entry vert.")
+            current_vert = entry_vert
+            while True:
+                assert current_vert.role.is_dual(), "RegionTree.Region.get_uniform_interior_vert traversed to non-dual vert."
+                if current_vert.map_tree_vert.dfs_in == target_idx or \
+                   current_vert.map_tree_vert.dfs_out == target_idx:
+                    break
+
+                for edge in current_vert.cc_edges:
+                    next_vert, _ = edge.get_dual_dest_from(current_vert)
+                    if current_vert.map_tree_vert.dfs_in <= target_idx and \
+                        current_vert.map_tree_vert.dfs_out >= target_idx:
+                            current_vert = next_vert
+                            break
+
+            return current_vert
 
         def check_center(self):
             is_center = True
@@ -209,10 +300,10 @@ class RegionTree:
             if is_center:
                 if self.validate_split_possible():
                     self.region_tree.central_region = self
-                    print("Region", self.id_str, "is central region of region tree", self.region_tree.id_str, "with", self.weight, "weight.")
+                    # print("Region", self.id_str, "is central region of region tree", self.region_tree.id_str, "with", self.weight, "weight.")
                 else:
                     self.region_tree.central_region = None
-                    print("Region", self.id_str, "is central, but a 2-split not possible.")
+                    # print("Region", self.id_str, "is central, but a 2-split not possible.")
 
         def validate_split_possible(self) -> bool:
             if len(self.cc_region_edges) == 0:
@@ -253,6 +344,15 @@ class RegionTree:
                     leading_idx += 1
 
     class Edge:
+        __slots__ = (
+            'end_A', 
+            'end_B', 
+            'twin_graph_edge', 
+            'ab_weight_differential', 
+            'region_tree', 
+            'id_str'
+        )
+
         # Edge A and B ends must match directionally with underlying twin_graph_edge
         end_A: RegionTree.Region
         end_B: RegionTree.Region
@@ -280,11 +380,11 @@ class RegionTree:
                 raise KeyError("Src for get_primal_dest_from is not on edge.")
 
         # Get the angle to the vertex on the other end of an edge along with directional annotation
-        def get_rad_from(self, src: RegionTree.Region) -> Tuple[float, RegionTree.EdgeDir]:
-            _, dir = self.get_dest_from(src)
-            src_rad = self.twin_graph_edge.get_dual_rad_along(dir)
+        # def get_rad_from(self, src: RegionTree.Region) -> Tuple[float, RegionTree.EdgeDir]:
+        #     _, dir = self.get_dest_from(src)
+        #     src_rad = self.twin_graph_edge.get_dual_rad_along(dir)
 
-            return (src_rad, dir)
+        #     return (src_rad, dir)
 
         # Get the total weight on the opposite side of the edge of the given region
         # Returns None if ab_weight_differential is not yet calculated
@@ -334,7 +434,8 @@ class RegionTree:
                     raise ValueError("Cannot set edge as edge center, region tree already has edge center.")
 
                 self.region_tree.edge_center = self
-                print("Edge", self.id_str, "is edge center of region tree", self.region_tree.id_str)
+                # self.region_tree.central_region = None
+                # print("Edge", self.id_str, "is edge center of region tree", self.region_tree.id_str)
 
 
             

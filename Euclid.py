@@ -4,6 +4,8 @@ from typing import Tuple
 import math
 
 class Point:
+    __slots__ = ('x', 'y')
+
     x: float
     y: float
 
