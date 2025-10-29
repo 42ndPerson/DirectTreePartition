@@ -38,12 +38,17 @@ class GraphNav:
     def run_two_split_attempt(self) -> Optional[List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]]:
         while self.region_tree.central_region is not None and self.region_tree.edge_center is None:
             # Select random starting vert within central region
-            lining_verts = self.region_tree.central_region.get_interior_lining_verts()
-            if len(lining_verts) == 0:
-                warnings.warn("Central region has no interior lining verts to start walk from.")
-                return None # No valid starting verts indicates region with one vert
-            start_vert = random.choice(list(lining_verts))
-            # start_vert = self.region_tree.central_region.get_uniform_interior_vert()
+            # lining_verts = self.region_tree.central_region.get_interior_lining_verts()
+            # if len(lining_verts) == 0:
+            #     print("Central region has no interior lining verts to start walk from.")
+            #     return None # No valid starting verts indicates region with one primal vert
+            # start_vert = random.choice(list(lining_verts))
+            print("Tree Verts:", [v.id_str for v in self.tree_verts])
+            print("Regions:", [(r.id_str, [v.id_str for v in r.get_perimeter_verts()], '\n') for r in self.region_tree.regions])
+            start_vert = self.region_tree.central_region.get_uniform_interior_vert()
+            if start_vert is None:
+                print("Central region has no interior verts to start walk from.")
+                return None
             self.walk_division_from(self.region_tree.central_region, start_vert)
             
         if self.region_tree.edge_center is not None:
@@ -221,7 +226,7 @@ class GraphNav:
             if self.animating:
                 # Convert walk_edges to the expected tuple format
                 if self.region_tree.central_region is not None:
-                    perimeter_edges = self.region_tree.central_region.get_perimeter_edges()
+                    perimeter_edges = self.region_tree.central_region.dual_perimeter_edges # get_perimeter_edges()
                 else:
                     perimeter_edges = set()
                 walk_tuples = [

@@ -73,8 +73,11 @@ class GraphVis:
             primal_labels_surface.blit(label_surface, label_pos)
         for vert in self.graph.dualVerts:
             vert_pos = self.point_graph_to_window(vert.point)
-            label_pos = (vert_pos.x + 8, vert_pos.y - 12)
-            label_surface = font.render(str(vert.id_str), True, GraphVis.DrawColors.green)
+            label_pos = (
+                vert_pos.x + 8, 
+                vert_pos.y - 12 + (0 if vert.role != TwinGraph.VertRole.DUAL_EXTERIOR else - 12)
+            )
+            label_surface = font.render(f'{vert.id_str} -> {vert.map_tree_vert.dfs_in} : {vert.map_tree_vert.dfs_out}', True, GraphVis.DrawColors.green)
             dual_labels_surface.blit(label_surface, label_pos)
         for edge in self.graph.edges:
             if edge.dual_AB is not None and edge.dual_BA is not None: # Check dual exists and should be drawn
