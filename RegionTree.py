@@ -223,77 +223,66 @@ class RegionTree:
             print("Perim Verts:", [v.id_str for v in full_perimeter_verts])
             print("Measured weight:", self.region_tree.graph.count_primal_verts_within_perim(self.dual_perimeter))
             dual_tree_checkpoints: List[int] = []
+            dual_tree_checkpoints_interior_flowing: List[bool] = []
             dual_tree_checkpoints_map: Dict[int, TwinGraph.Vert] = {}
+            dual_tree_path_pairs: List[Tuple[int, int]] = []
 
             # This function utilizes the dfs indexing of the dual map tree to
             #  uniformly select an interior vert.  As trees only contain one
             #  path between any two verts, if we take dfs_in and dfs_out on
-            #  each perimeter vert, the pairs that are adjacent in sorted order
-            #  define ranges within the dfs tree that do not cross the perimeter.
-            #  As each index is a point of crossing the perimeter, the sorted
-            #  order of the indices alternates between interior and exterior
-            #  paths.  This function identifies whether even or odd ranges are
-            #  interior, then selects a random index within the interior ranges.
+            #  each lining vert, the pairs that are adjacent in sorted order 
+            #  without perimeter verts inbetween define ranges within the dfs 
+            #  tree that do not cross the perimeter.  As each index is a point 
+            #  of crossing the perimeter, the sorted order of the indices
+            #  alternates between interior and exterior paths.  This function
+            #  identifies whether even or odd ranges are interior, then selects
+            #  a random index within the interior ranges.
 
-            # Collect all entry and exit points to region and identify interior/exterior relationship
-            interior_point_found = False
-            interior_vert: Optional[TwinGraph.Vert] = None
+            # Collect all entry and exit points to region
             for edge, dir in self.dual_perimeter:
                 _, vert = edge.get_dual_vert_pair(dir)
-                path_range_min = min(vert.map_tree_vert.dfs_in, vert.map_tree_vert.dfs_out)
-                path_range_max = max(vert.map_tree_vert.dfs_in, vert.map_tree_vert.dfs_out)
 
-                dual_tree_checkpoints.append(path_range_min) # TODO: Maybe switch to bisect insertion for efficiency
-                dual_tree_checkpoints.append(path_range_max)
-                dual_tree_checkpoints_map[path_range_min] = vert
-                dual_tree_checkpoints_map[path_range_max] = vert
+                dual_tree_checkpoints.append(vert.map_tree_vert.dfs_in)
+                dual_tree_checkpoints.append(vert.map_tree_vert.dfs_out)
+                dual_tree_checkpoints_map[vert.map_tree_vert.dfs_in] = vert
+                dual_tree_checkpoints_map[vert.map_tree_vert.dfs_out] = vert
 
-                # Identify interior point for later interior/exteriror relationship verification
-                if not interior_point_found:
-                    print("Checking perimeter vert for interior/exterior relationship from:", vert.id_str)
-                    swept_edge, _ = edge.get_dual_cc_next_edge(vert)
-                    if swept_edge not in self.dual_perimeter_edges:
-                        interior_vert, _ = swept_edge.get_dual_dest_from(vert)
-                        print("Checking edge to:", interior_vert.id_str)
-                        # if path_range_min < interior_vert.map_tree_vert.dfs_in < path_range_max and \
-                        #     path_range_min < interior_vert.map_tree_vert.dfs_out < path_range_max:
-                        #     flip_interior_exterior = False
-                        # else:
-                        #     assert min(interior_vert.map_tree_vert.dfs_in, interior_vert.map_tree_vert.dfs_out) < path_range_min and \
-                        #             max(interior_vert.map_tree_vert.dfs_in, interior_vert.map_tree_vert.dfs_out) > path_range_max, \
-                        #             "RegionTree.Region.get_uniform_interior_vert found inconsistent interior/exterior relationship during perimeter vert analysis."
-                        #     flip_interior_exterior = True
+                # Determine whether interior or exterior
+                # Start by extracting interior-side dual-tree edges
+                interior_dual_mapping_tree_edges: Set[TwinGraph.QuadEdge] = set()
+                rotary_center = vert
+                current_edge = edge
+                while True:
+                    # Advance sweep
+                    current_edge, _ = current_edge.get_dual_cc_next_edge(rotary_center)
 
-                        # interior_exterior_verified = True
-            if interior_vert is None:
-                return None # No interior verts available
+                    # Check whether sweep has re-encountered perimeter edge
+                    if current_edge in self.dual_perimeter_edges:
+                        break
+
+                    # Check whether edge is in mapping tree
+                    if current_edge in self.region_tree.graph.dualMap.quad_edges:
+                        interior_dual_mapping_tree_edges.add(current_edge)
+                # Determine flow
+
             
             print("Raw checkpoints:", dual_tree_checkpoints)
-            # Prep checkpoint ranges by sorting and inverting if necessary for interior/exterior
-            dual_tree_checkpoints.sort() # Group subranges that identify paths between perimeter checkpoints
-
-            interior_dfs_idx = interior_vert.map_tree_vert.dfs_in # Find where an interior vert lies relative to checkpoint ranges
-            interior_dfs_idx_range_pos = bisect.bisect_left(dual_tree_checkpoints, interior_dfs_idx)
-            print("Interior vert:", interior_vert.id_str, "dfs_in:", interior_dfs_idx, "falls at range pos:", interior_dfs_idx_range_pos)
-
-            if interior_dfs_idx_range_pos % 2 == 0: # Interior is outside even ranges
-                # Inverts checkpoint ranges to get interior (Checkpoints are evaluated in pairs, so this shifts the interior of each pair)
-                dual_tree_checkpoints.insert(0, 0)
-                dual_tree_checkpoints.append(2 * len(self.region_tree.graph.dualVerts) - 1)
-
-                # These phantom checkpoint indices do not have a location on the perimeter
-                # To avoid an edge case when traversing into the interior where the
-                #  dfs index loops, we insert the root vert as a phantom checkpoint
-                #  that lives interior to the perimeter
-                dual_tree_checkpoints_map[0] = self.region_tree.graph.dualMap.root.twin_vert
-                dual_tree_checkpoints_map[2 * self.region_tree.graph.total_primal_weight] = self.region_tree.graph.dualMap.root.twin_vert
+            print("Raw interior flowing:", dual_tree_checkpoints_interior_flowing)
+            # Sort to identify index ranges for paths between checkpoints
+            zipped_checkpoint_info = list(zip(dual_tree_checkpoints, dual_tree_checkpoints_interior_flowing))
+            print("Zipped checkpoints:", zipped_checkpoint_info)
+            zipped_checkpoint_info.sort() # Group subranges that identify paths between perimeter checkpoints
+            dual_tree_checkpoints, dual_tree_checkpoints_interior_flowing = map(list, zip(*zipped_checkpoint_info))
+            print("Sorted checkpoints:", dual_tree_checkpoints)
+            print("Sorted interior flowing:", dual_tree_checkpoints_interior_flowing)
 
             # Count interior dual verts
-            double_weight = 0
             print(dual_tree_checkpoints)
-            for perim_idx in range(0, len(dual_tree_checkpoints), 2):
-                print(dual_tree_checkpoints[perim_idx], dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)])
-                double_weight += dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)] - dual_tree_checkpoints[perim_idx] - 1 # Subtract 1 to not count the perimeter verts
+            double_weight = 0
+            for perim_idx in range(len(dual_tree_checkpoints)):
+                next_perim_idx = (perim_idx + 1) % len(dual_tree_checkpoints)
+                if dual_tree_checkpoints_interior_flowing[perim_idx]:
+                    double_weight += dual_tree_checkpoints[next_perim_idx] - dual_tree_checkpoints[perim_idx] - 1 # Subtract 1 to not count the perimeter verts
 
             # Select random
             print("Double Weight:", double_weight)
@@ -307,24 +296,25 @@ class RegionTree:
             logical_range_covered = 0
             print(dual_tree_checkpoints)
             for perim_idx in range(0, len(dual_tree_checkpoints), 2):
-                range_start_checkpoint_dfs_idx = dual_tree_checkpoints[perim_idx]
-                range_end_checkpoint_dfs_idx = dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)]
-                range_size = range_end_checkpoint_dfs_idx - range_start_checkpoint_dfs_idx - 1 # Subtract 1 to not count the perimeter verts
+                if dual_tree_checkpoints_interior_flowing[perim_idx]:
+                    range_start_checkpoint_dfs_idx = dual_tree_checkpoints[perim_idx]
+                    range_end_checkpoint_dfs_idx = dual_tree_checkpoints[(perim_idx + 1) % len(dual_tree_checkpoints)]
+                    range_size = range_end_checkpoint_dfs_idx - range_start_checkpoint_dfs_idx - 1 # Subtract 1 to not count the perimeter verts
 
-                # Check if target index is within this range
-                if checkpoint_range_target_idx >= logical_range_covered and \
-                   checkpoint_range_target_idx < logical_range_covered + range_size:
-                    entry_vert = dual_tree_checkpoints_map[range_start_checkpoint_dfs_idx]
+                    # Check if target index is within this range
+                    if checkpoint_range_target_idx >= logical_range_covered and \
+                    checkpoint_range_target_idx < logical_range_covered + range_size:
+                        entry_vert = dual_tree_checkpoints_map[range_start_checkpoint_dfs_idx]
 
-                    # Get dfs index of target interior vert
-                    dfs_target_idx = \
-                        range_start_checkpoint_dfs_idx + 1 + (checkpoint_range_target_idx - logical_range_covered)
-                        # Add 1 to skip perimeter vert
+                        # Get dfs index of target interior vert
+                        dfs_target_idx = \
+                            range_start_checkpoint_dfs_idx + 1 + (checkpoint_range_target_idx - logical_range_covered)
+                            # Add 1 to skip perimeter vert
 
-                    break
-                
-                # Track logical range covered
-                logical_range_covered += range_size
+                        break
+                    
+                    # Track logical range covered
+                    logical_range_covered += range_size
 
             # Traverse to interior
             print("Target dfs idx:", dfs_target_idx)

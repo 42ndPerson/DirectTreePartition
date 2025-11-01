@@ -91,12 +91,12 @@ class TwinGraph:
         self.annotate_dual_edges_for_primal_counting()
 
         # Populate retrieval caches
-        for edge in self.edges: # TAG: Profiling
-            vert1, vert2 = edge.get_dual_vert_pair(TwinGraph.EdgeDir.AB)
-            edge.dual_cc_next_retrieval_cache = {
-                id(vert1): edge.get_dual_cc_next_edge(vert1),
-                id(vert2): edge.get_dual_cc_next_edge(vert2)
-            }
+        # for edge in self.edges: # TAG: Profiling
+        #     vert1, vert2 = edge.get_dual_vert_pair(TwinGraph.EdgeDir.AB)
+        #     edge.dual_cc_next_retrieval_cache = {
+        #         id(vert1): edge.get_dual_cc_next_edge(vert1),
+        #         id(vert2): edge.get_dual_cc_next_edge(vert2)
+        #     }
 
             
     def construct_dual(self) -> None:
@@ -481,7 +481,7 @@ class TwinGraph:
             'dual_BA_cc_prev',
             'dual_AB_annotation',
             'id_str',
-            'dual_cc_next_retrieval_cache', # TAG: Profiling
+            # 'dual_cc_next_retrieval_cache', # TAG: Profiling
         )
 
         primal_A: TwinGraph.Vert
@@ -500,7 +500,7 @@ class TwinGraph:
 
         dual_AB_annotation: Optional[int] # Annotation for primal vert counting
 
-        dual_cc_next_retrieval_cache: Dict[int, Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]] # TAG: Profiling
+        # dual_cc_next_retrieval_cache: Dict[int, Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]] # TAG: Profiling
 
         # Instance labeling
         index: int = 0
@@ -637,14 +637,23 @@ class TwinGraph:
             return None
 
     class MapTree:
+        __slots__ = (
+            'root',
+            'verts',
+            'edges',
+            'quad_edges'
+        )
+
         root: TwinGraph.MapTree.MapTreeVert
         verts: Set[TwinGraph.MapTree.MapTreeVert]
         edges: Set[TwinGraph.MapTree.MapTreeEdge]
+        quad_edges: Set[TwinGraph.QuadEdge]
 
         def __init__(self, root: MapTreeVert):
             self.root = root
             self.verts = set()
             self.edges = set()
+            self.quad_edges = set()
             self.collect_tree(root)
 
         def collect_tree(self, vert):
@@ -655,12 +664,26 @@ class TwinGraph:
                     self.collect_tree(edge.child)
 
         class MapTreeVert:
+            __slots__ = (
+                'twin_vert',
+                'dfs_in',
+                'dfs_out',
+                'out_edges',
+                'in_edge',
+            )
+
+            twin_vert: TwinGraph.Vert
+            dfs_in: int
+            dfs_out: int
+            out_edges: List[TwinGraph.MapTree.MapTreeEdge]
+            in_edge: Optional[TwinGraph.MapTree.MapTreeEdge]
+
             def __init__(self, twin_vert: TwinGraph.Vert):
                 self.twin_vert = twin_vert
-                self.dfs_in: int = -1
-                self.dfs_out: int = -1
-                self.out_edges: List[TwinGraph.MapTree.MapTreeEdge] = []
-                self.in_edge: Optional[TwinGraph.MapTree.MapTreeEdge] = None
+                self.dfs_in = -1
+                self.dfs_out = -1
+                self.out_edges = []
+                self.in_edge = None
 
             def add_child(self, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir):
                 edge = TwinGraph.MapTree.MapTreeEdge(self, child, twin_edge, edge_dir)
@@ -668,7 +691,25 @@ class TwinGraph:
                 child.in_edge = edge
 
         class MapTreeEdge:
-            def __init__(self, parent: TwinGraph.MapTree.MapTreeVert, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir):
+            __slots__ = (
+                'parent',
+                'child',
+                'twin_edge',
+                'edge_dir',
+            )
+
+            parent: TwinGraph.MapTree.MapTreeVert
+            child: TwinGraph.MapTree.MapTreeVert
+            twin_edge: TwinGraph.QuadEdge
+            edge_dir: TwinGraph.EdgeDir
+
+            def __init__(
+                    self, 
+                    parent: TwinGraph.MapTree.MapTreeVert, 
+                    child: TwinGraph.MapTree.MapTreeVert, 
+                    twin_edge: TwinGraph.QuadEdge, 
+                    edge_dir: TwinGraph.EdgeDir
+                    ):
                 self.parent = parent
                 self.child = child
                 self.twin_edge = twin_edge
