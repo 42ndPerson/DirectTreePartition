@@ -3,6 +3,8 @@ from typing import Tuple
 
 import math
 
+from scipy.fftpack import diff
+
 class Point:
     __slots__ = ('x', 'y')
 
@@ -23,3 +25,9 @@ class Point:
     @staticmethod
     def src_dest_rad(src: Point, dest: Point) -> float:
         return math.atan2(dest.y - src.y, dest.x - src.x)
+    
+    @staticmethod
+    def normalized_angle_diff(angle_from: float, angle_to: float) -> float:
+        delta = angle_to - angle_from
+        delta = (delta + math.pi) % (2 * math.pi) - math.pi
+        return delta

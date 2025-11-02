@@ -6,6 +6,7 @@ import sys
 from collections import deque
 
 from Euclid import *
+import Euclid
 
 class TwinGraph:
     __slots__ = (
@@ -177,6 +178,7 @@ class TwinGraph:
 
             # Break if loop is complete
             if current_vert == root_vert:
+                # TODO: Check if terminates before checking last vert
                 break
 
             # Get next edge and vert and update total angle
@@ -184,7 +186,7 @@ class TwinGraph:
             current_edge, _ = current_edge.get_primal_cc_next_edge(current_vert) # Gets next edge proceeding counter-clockwise
             current_vert, current_dir = current_edge.get_primal_dest_from(current_vert)
 
-            total_angle += current_edge.get_primal_rad_along(current_dir) - prev_angle
+            total_angle += Euclid.Point.normalized_angle_diff(current_edge.get_primal_rad_along(current_dir), prev_angle)
 
             # Idx Update
             idx += 1
