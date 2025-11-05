@@ -40,14 +40,15 @@ class GraphNav:
             # Select random starting vert within central region
             # lining_verts = self.region_tree.central_region.get_interior_lining_verts()
             # if len(lining_verts) == 0:
-            #     print("Central region has no interior lining verts to start walk from.")
+            #     # print("Central region has no interior lining verts to start walk from.")
             #     return None # No valid starting verts indicates region with one primal vert
             # start_vert = random.choice(list(lining_verts))
-            print("Tree Verts:", [v.id_str for v in self.tree_verts])
-            print("Regions:", [(r.id_str, [v.id_str for v in r.get_perimeter_verts()], '\n') for r in self.region_tree.regions])
+            # print("Tree Verts:", [v.id_str for v in self.tree_verts])
+            # print("Regions:", [(r.id_str, [v.id_str for v in r.get_perimeter_verts()], '\n') for r in self.region_tree.regions])
             start_vert = self.region_tree.central_region.get_uniform_interior_vert()
+            # start_vert = self.region_tree.central_region.get_central_region_vert()
             if start_vert is None:
-                print("Central region has no interior verts to start walk from.")
+                # print("Central region has no interior verts to start walk from.")
                 return None
             self.walk_division_from(self.region_tree.central_region, start_vert)
             
@@ -98,7 +99,13 @@ class GraphNav:
         # print("Starting walk division from region", region.id_str, "at vert", start_vert.id_str)
 
         # Build walk than progressively discover regions
-        region_edge = self.loop_erased_random_walk_from(start_vert)
+        walk_edges: List[TwinGraph.QuadEdge] = []
+        consumed_verts: Set[TwinGraph.Vert] = set()
+        for i in range(5): # Walk multiple times for a more likely successful division
+            new_walk_edges, new_consumed_verts = self.loop_erased_random_walk_from(start_vert, walk_edges, consumed_verts)
+            walk_edges.extend(new_walk_edges)
+            consumed_verts.update(new_consumed_verts)
+        region_edge = self.commit_walk(walk_edges, consumed_verts)
         new_regions = self.develop_region(region, region_edge, TwinGraph.EdgeDir.AB) # Ok to start in arbitrary direction because loop is starting from boundary rather than bridge, so equivalent connections occur from either side
         for new_region in new_regions:
             new_region.generate_cc_region_edges() # Ensure cc_region_edges is populated before validate_split_possible is called
@@ -149,47 +156,53 @@ class GraphNav:
         return perim
 
     def get_enclosed_primal_verts(self, perim: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]) -> Set[TwinGraph.Vert]:
-            """
-            Given a perimeter defined by a clockwise loop of dual edges,
-            find all primal verts enclosed by that perimeter.  The perimeter
-            may not cross itself and must fully enclose at least one primal 
-            vert.
-            """ # Necessary assumption for all internal primal verts to be connected
-            perim_set = set(edge for edge, _ in perim)
+        """
+        Given a perimeter defined by a clockwise loop of dual edges,
+        find all primal verts enclosed by that perimeter.  The perimeter
+        may not cross itself and must fully enclose at least one primal 
+        vert.
+        """ # Necessary assumption for all internal primal verts to be connected
+        perim_set = set(edge for edge, _ in perim)
 
-            # Find a starting primal vert inside the perimeter
-            start_primal: Optional[TwinGraph.Vert] = None
-            next_edge = perim[0][0].dual_AB_cc_next # Clockwise cell from src_edge contains interior primal
-            src_primals = perim[0][0].get_primal_vert_pair(TwinGraph.EdgeDir.AB)
-            next_primals = next_edge.get_primal_vert_pair(TwinGraph.EdgeDir.AB)
-            if src_primals[0] in next_primals:
-                start_primal = src_primals[0]
-            elif src_primals[1] in next_primals:
-                start_primal = src_primals[1]
+        # Find a starting primal vert inside the perimeter
+        start_primal: Optional[TwinGraph.Vert] = None
+        next_edge = perim[0][0].dual_AB_cc_next # Clockwise cell from src_edge contains interior primal
+        src_primals = perim[0][0].get_primal_vert_pair(TwinGraph.EdgeDir.AB)
+        next_primals = next_edge.get_primal_vert_pair(TwinGraph.EdgeDir.AB)
+        if src_primals[0] in next_primals:
+            start_primal = src_primals[0]
+        elif src_primals[1] in next_primals:
+            start_primal = src_primals[1]
 
-            if start_primal is None:
-                raise ValueError("RegionTree.Region.get_enclosed_primal_verts could not find starting primal vert inside perimeter.")
+        if start_primal is None:
+            raise ValueError("RegionTree.Region.get_enclosed_primal_verts could not find starting primal vert inside perimeter.")
 
-            # Conduct Depth First Exploration to collect all enclosed primal verts
-            enclosed: Set[TwinGraph.Vert] = set()
+        # Conduct Depth First Exploration to collect all enclosed primal verts
+        enclosed: Set[TwinGraph.Vert] = set()
 
-            visited: Set[TwinGraph.Vert] = set()
-            queue: List[TwinGraph.Vert] = [start_primal]
-            while len(queue) > 0:
-                current = queue.pop(0)
-                visited.add(current)
-                enclosed.add(current)
+        visited: Set[TwinGraph.Vert] = set()
+        queue: List[TwinGraph.Vert] = [start_primal]
+        while len(queue) > 0:
+            current = queue.pop(0)
+            visited.add(current)
+            enclosed.add(current)
 
-                for edge in current.cc_edges:
-                    if edge not in perim_set:
-                        dest, _ = edge.get_primal_dest_from(current)
-                        if dest not in visited and dest not in queue:
-                            queue.append(dest)
+            for edge in current.cc_edges:
+                if edge not in perim_set:
+                    dest, _ = edge.get_primal_dest_from(current)
+                    if dest not in visited and dest not in queue:
+                        queue.append(dest)
 
-            return enclosed
+        return enclosed
 
-    def loop_erased_random_walk_from(self, vert: TwinGraph.Vert) -> TwinGraph.QuadEdge:
+    def loop_erased_random_walk_from(
+            self, 
+            vert: TwinGraph.Vert,
+            existing_walk_edges: List[TwinGraph.QuadEdge],
+            existing_consumed_verts: Set[TwinGraph.Vert]
+        ) -> Tuple[List[TwinGraph.QuadEdge], Set[TwinGraph.Vert]]:
         assert vert not in self.tree_verts, "Starting vert is already in tree."
+        # print("Starting loop-erased random walk from vert", vert.id_str)
 
         # Confirm vert is dual
         if not vert.role.is_dual():
@@ -200,11 +213,11 @@ class GraphNav:
         current_vert: TwinGraph.Vert
         consumed_verts: Set[TwinGraph.Vert] = set() # Track for self-collisions
         walk_edges: List[TwinGraph.QuadEdge] = []
+        escaped_existing_walk = False
 
         # Set up first edge and vert
         current_edge = vert.cc_edges[random.randint(0, len(vert.cc_edges)-1)]
         current_vert, _ = current_edge.get_dual_dest_from(vert)
-        consumed_verts.add(vert)
 
         while True:
             # Erase loop if present
@@ -212,15 +225,31 @@ class GraphNav:
                 rewind_vert: TwinGraph.Vert
                 rewind_vert, _ = current_edge.get_dual_dest_from(current_vert)
 
+                # print("Loop detected back to vert", current_vert.id_str, "; rewinding to remove loop.")
                 while rewind_vert != current_vert: # Since current_vert is in consumed_verts, this will always terminate
+                    # print("Removing vert", rewind_vert.id_str)
                     consumed_verts.remove(rewind_vert)
                     last_edge: TwinGraph.QuadEdge = walk_edges.pop()
                     rewind_vert, _ = last_edge.get_dual_dest_from(rewind_vert)
 
             # Register progress
             else:
-                consumed_verts.add(current_vert)
-                walk_edges.append(current_edge)
+                # Only begin saving once loop has a 1 edge gap from existing consumed verts
+                if escaped_existing_walk:
+                    # print("Registering vert", current_vert.id_str)
+                    consumed_verts.add(current_vert)
+                    walk_edges.append(current_edge)
+                # else:
+                    # print("At vert", current_vert.id_str)
+
+                end_a, end_b = current_edge.get_dual_vert_pair(TwinGraph.EdgeDir.AB)
+                if not escaped_existing_walk and end_a not in existing_consumed_verts and end_b not in existing_consumed_verts:
+                    assert end_a is current_vert or end_b is current_vert, "Current vert is at neither end of current edge." 
+                    # print("Walk has escaped existing consumed verts.", end_a.id_str, end_b.id_str, current_vert.id_str)
+                    escaped_existing_walk = True
+                    consumed_verts.add(end_a)
+                    consumed_verts.add(end_b)
+                    walk_edges.append(current_edge)
 
             # Animation tracking
             if self.animating:
@@ -231,7 +260,7 @@ class GraphNav:
                     perimeter_edges = set()
                 walk_tuples = [
                     (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0 if edge not in perimeter_edges else 2)  # Replace FORWARD with actual direction if needed
-                    for edge in walk_edges
+                    for edge in walk_edges + existing_walk_edges
                 ]
                 tree_tuples = [
                     (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0 if edge not in perimeter_edges else 2)  # Replace FORWARD with actual direction if needed
@@ -248,6 +277,7 @@ class GraphNav:
             # Check if done
             if (
                 current_vert in self.tree_verts or # Walk hits tree
+                (current_vert in existing_consumed_verts and escaped_existing_walk) or # Walk hits itself from prior walk
                 current_vert.role == TwinGraph.VertRole.DUAL_EXTERIOR or # Dual walk hits exterior
                 ((current_edge.dual_AB is not None and current_edge.dual_AB.role == TwinGraph.VertRole.DUAL_EXTERIOR) or # Primal walk moves along edge with exterior dual
                  (current_edge.dual_BA is not None and current_edge.dual_BA.role == TwinGraph.VertRole.DUAL_EXTERIOR))
@@ -257,7 +287,10 @@ class GraphNav:
             # Find next vert and edge
             current_edge = current_vert.cc_edges[random.randint(0, len(current_vert.cc_edges)-1)]
             current_vert, _ = current_edge.get_dual_dest_from(current_vert)
-            
+
+        return walk_edges, consumed_verts
+    
+    def commit_walk(self, walk_edges: List[TwinGraph.QuadEdge], consumed_verts: Set[TwinGraph.Vert]) -> TwinGraph.QuadEdge: 
         # Commit walk to tree
         for edge in walk_edges:
             self.tree_edges.add(edge)

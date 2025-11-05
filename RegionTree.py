@@ -260,16 +260,11 @@ class RegionTree:
                 + [BoundaryElement(v.map_tree_vert.dfs_out, BoundaryType.LINING, v) for v in lining_verts]
             dual_tree_path_pairs: List[Tuple[BoundaryElement, BoundaryElement]] = []
 
-            print("Perimeter Edges:", [e.id_str for e, _ in self.dual_perimeter])
-            print("Boundary Elements (unsorted):", [(be.dfs_index, be.boundary_type.name, be.vert.id_str) for be in perimeter_table])
-            print("Measured weight:", self.region_tree.graph.count_primal_verts_within_perim(self.dual_perimeter))
-
             # Sort boundary elements by dfs index to group path pairs
             perimeter_table.sort(key=lambda be: be.dfs_index)
-            print("Boundary Elements (sorted):", [(be.dfs_index, be.boundary_type.name, be.vert.id_str) for be in perimeter_table])
 
             # Count interior dual verts and build pairings
-            print(dual_tree_path_pairs)
+            # print(dual_tree_path_pairs)
             double_weight = 0
             # Each pair that does not have a perimeter vert inbetween is an interior path
             # We only check index-increasing pairs as we would otherwise double count
@@ -283,9 +278,9 @@ class RegionTree:
                     dual_tree_path_pairs_temp.append((leading_idx, leading_idx)) # Pair for single lining vert abutting perimeter
             if perimeter_table[-2].boundary_type == BoundaryType.PERIMETER and perimeter_table[-1].boundary_type == BoundaryType.LINING:
                 dual_tree_path_pairs_temp.append((perimeter_table[-1], perimeter_table[-1])) # Pair for single lining vert abutting perimeter
-            print("Dual Tree Path Pairs (pre-consolidation):", [(pair[0].dfs_index, pair[1].dfs_index) for pair in dual_tree_path_pairs_temp])
             if len(dual_tree_path_pairs_temp) == 0:
                 return None # No interior verts available
+            
             # Consolidate adjacent ranges and count weight
             cursor_pair = dual_tree_path_pairs_temp[0]
             if len(dual_tree_path_pairs_temp) == 0:
@@ -298,7 +293,6 @@ class RegionTree:
                     # Not adjacent, finalize current pair
                     dual_tree_path_pairs.append(cursor_pair)
                     leading_idx, trailing_idx = cursor_pair
-                    print("Double Weight: Adding range from", leading_idx.dfs_index, "to", trailing_idx.dfs_index, "onto", double_weight)
                     double_weight += trailing_idx.dfs_index - leading_idx.dfs_index + 1 # Add 1 to include trailing index
                     
                     # Advance cursor
@@ -306,12 +300,9 @@ class RegionTree:
             # Finalize last pair
             dual_tree_path_pairs.append(cursor_pair)
             leading_idx, trailing_idx = cursor_pair
-            print("Double Weight: Adding range from", leading_idx.dfs_index, "to", trailing_idx.dfs_index, "onto", double_weight)
             double_weight += trailing_idx.dfs_index - leading_idx.dfs_index + 1 # Add 1 to include trailing index
-            print("Dual Tree Path Pairs (final):", [(pair[0].dfs_index, pair[1].dfs_index) for pair in dual_tree_path_pairs])
 
             # Select random
-            print("Double Weight:", double_weight)
             if double_weight == 0:
                 return None # No interior verts available
             checkpoint_range_target_idx = random.randint(0, double_weight - 1)
@@ -319,53 +310,70 @@ class RegionTree:
 
             # Locate entry point
             entry_vert: Optional[TwinGraph.Vert] = None
-            containing_range: Optional[Tuple[int, int]] = None
             logical_range_covered = 0
-            print("Dual Tree Path Pairs:", [(pair[0].dfs_index, pair[1].dfs_index) for pair in dual_tree_path_pairs])
             for leading, trailing in dual_tree_path_pairs:
-                print("Leading:", leading.dfs_index, leading.boundary_type, "Trailing:", trailing.dfs_index, trailing.boundary_type)
-                print("Logical Range Covered:", logical_range_covered, "Checkpoint Target Idx:", checkpoint_range_target_idx)
                 if logical_range_covered + (trailing.dfs_index - leading.dfs_index + 1) > checkpoint_range_target_idx:
                     # Target is within this range
                     offset_into_range = checkpoint_range_target_idx - logical_range_covered
                     dfs_target_idx = leading.dfs_index + offset_into_range
                     entry_vert = leading.vert
-                    containing_range = (leading.dfs_index, trailing.dfs_index)
                     break
                 logical_range_covered += trailing.dfs_index - leading.dfs_index + 1 # Add 1 to include trailing index
             if dfs_target_idx is None:
                 raise ValueError("RegionTree.Region.get_uniform_interior_vert could not locate dfs target index.")
 
             # Traverse to interior
-            print("Target dfs idx:", dfs_target_idx)
-            print("Entry vert:", entry_vert.id_str if entry_vert is not None else "None")
             if entry_vert is None:
                 raise ValueError("RegionTree.Region.get_uniform_interior_vert could not locate entry vert.")
-            if containing_range is None:
-                raise ValueError("RegionTree.Region.get_uniform_interior_vert could not locate containing range.")
-            debug_visited = set()
-            current_vert = entry_vert
+            current_vert = entry_vert.map_tree_vert
+            # print("DFS Target Index:", dfs_target_idx)
             while True:
-                if current_vert in debug_visited:
-                    sleep(5000)
-                debug_visited.add(current_vert)
-                if current_vert.map_tree_vert.dfs_in == dfs_target_idx or \
-                   current_vert.map_tree_vert.dfs_out == dfs_target_idx:
+                # print("At dfs", current_vert.dfs_in, current_vert.dfs_out, "on vert", current_vert.twin_vert.id_str)
+                if current_vert.dfs_in == dfs_target_idx or \
+                   current_vert.dfs_out == dfs_target_idx:
                     break
                 
-                next_vert_found = False
-                for edge in current_vert.cc_edges: # Sweep through edges to find direction including target
-                    next_vert, _ = edge.get_dual_dest_from(current_vert)
-                    if (containing_range[0] <= next_vert.map_tree_vert.dfs_in <= containing_range[1] and abs(dfs_target_idx - next_vert.map_tree_vert.dfs_in) < abs(dfs_target_idx - current_vert.map_tree_vert.dfs_in)) \
-                       or (containing_range[0] <= next_vert.map_tree_vert.dfs_out <= containing_range[1] and abs(dfs_target_idx - next_vert.map_tree_vert.dfs_out) < abs(dfs_target_idx - current_vert.map_tree_vert.dfs_out)):
-                        current_vert = next_vert
-                        next_vert_found = True
-                        break
-                print("Stepped to vert:", current_vert.id_str)
-                if not next_vert_found:
-                    raise ValueError("RegionTree.Region.get_uniform_interior_vert could not find interior target along implied path.")
+                # next_vert_found = False
+                contains = current_vert.dfs_in <= dfs_target_idx <= current_vert.dfs_out
+                if contains:
+                    # Target is in subtree, go deeper
+                    if len(current_vert.out_edges) == 0:
+                        raise ValueError("RegionTree.Region.get_uniform_interior_vert could not go down from leaf.")
+                    for edge in current_vert.out_edges:
+                        next_vert = edge.get_dest_from(current_vert)
+                        if next_vert.dfs_in <= dfs_target_idx <= next_vert.dfs_out:
+                            current_vert = next_vert
+                            # print("Moving to dfs", current_vert.dfs_in, "on vert", current_vert.twin_vert.id_str)
+                            break
+                else:
+                    # Target is outside subtree, go up
+                    if current_vert.in_edge is None:
+                        raise ValueError("RegionTree.Region.get_uniform_interior_vert could not go up from root.")
+                    next_vert = current_vert.in_edge.get_dest_from(current_vert)
+                    current_vert = next_vert
+                    # print("Moving to dfs", current_vert.dfs_in, "on vert", current_vert.twin_vert.id_str)
 
-            return current_vert
+            return current_vert.twin_vert
+
+        def get_central_region_vert(self) -> Optional[TwinGraph.Vert]:
+            """
+            Conducts a breadth-first search from the dual perimeter to find a central vert.
+            Returns None if no interior vert is found (region is a single primal vert).
+            Assumes that the region is connected.
+            """
+            visited = self.get_perimeter_verts()
+            queue = deque(self.get_interior_lining_verts())
+            dual_vert = None
+            while queue:
+                dual_vert = queue.popleft()
+                if dual_vert in visited:
+                    continue
+                visited.add(dual_vert)
+                for neighbor_edge in dual_vert.cc_edges:
+                    neighbor, _ = neighbor_edge.get_dual_dest_from(dual_vert)
+                    if neighbor not in visited:
+                        queue.append(neighbor)
+            return dual_vert
 
         def check_center(self):
             is_center = True

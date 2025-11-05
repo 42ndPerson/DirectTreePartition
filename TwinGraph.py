@@ -239,7 +239,9 @@ class TwinGraph:
 
                 if dest not in visited_verts and dest in tree_verts:
                     child_tree_vert: TwinGraph.MapTree.MapTreeVert = dest.map_tree_vert
-                    parent_tree_vert.add_child(child_tree_vert, edge, edge_dir)
+                    map_tree_edge = parent_tree_vert.add_child(child_tree_vert, edge, edge_dir)
+                    edge.map_tree_edge = map_tree_edge
+
                     visited_edges.add(edge)
                     if self.animating:
                         self.animation_tracks[1 if role == TwinGraph.VertRole.PRIMAL else 2].append([(visited_edge, role, edge_dir, 0) for visited_edge in visited_edges])
@@ -482,6 +484,7 @@ class TwinGraph:
             'dual_BA_cc_next',
             'dual_BA_cc_prev',
             'dual_AB_annotation',
+            'map_tree_edge',
             'id_str',
             # 'dual_cc_next_retrieval_cache', # TAG: Profiling
         )
@@ -501,6 +504,7 @@ class TwinGraph:
         dual_BA_cc_prev: TwinGraph.QuadEdge
 
         dual_AB_annotation: Optional[int] # Annotation for primal vert counting
+        map_tree_edge: TwinGraph.MapTree.MapTreeEdge
 
         # dual_cc_next_retrieval_cache: Dict[int, Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]] # TAG: Profiling
 
@@ -687,10 +691,12 @@ class TwinGraph:
                 self.out_edges = []
                 self.in_edge = None
 
-            def add_child(self, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir):
+            def add_child(self, child: TwinGraph.MapTree.MapTreeVert, twin_edge: TwinGraph.QuadEdge, edge_dir: TwinGraph.EdgeDir) -> TwinGraph.MapTree.MapTreeEdge:
                 edge = TwinGraph.MapTree.MapTreeEdge(self, child, twin_edge, edge_dir)
                 self.out_edges.append(edge)
                 child.in_edge = edge
+
+                return edge
 
         class MapTreeEdge:
             __slots__ = (
@@ -716,3 +722,11 @@ class TwinGraph:
                 self.child = child
                 self.twin_edge = twin_edge
                 self.edge_dir = edge_dir
+
+            def get_dest_from(self, src: TwinGraph.MapTree.MapTreeVert) -> TwinGraph.MapTree.MapTreeVert:
+                if src is self.parent:
+                    return self.child
+                elif src is self.child:
+                    return self.parent
+                else:
+                    raise KeyError("Src for get_dest_from is not on edge.")

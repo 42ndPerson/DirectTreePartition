@@ -80,6 +80,7 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
     for i in range(iters):
         loop = None
         idx = 0
+        graph_nav = None
         while loop == None:
             region_tree = RegionTree(graph)
             graph_nav = GraphNav(graph, region_tree)
@@ -91,15 +92,17 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
             if idx > 100000:
                 raise Exception("Failed to find bipartition after 100000 attempts")
             
+        if graph_nav is None:
+            raise Exception("GraphNav not initialized properly.")
         partition_1 = graph_nav.get_enclosed_primal_verts(loop)
         partition_2 = set(graph.primalVerts) - partition_1
         print("Direct Bipartition:", i, "after", idx, "attempts")
     end = time.perf_counter()
     print(f"Direct Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
 
-profiler = cProfile.Profile()
-with profiler:  
-    benchmark_bipartitioning_for_g_grid_graph(50, 20)
+# profiler = cProfile.Profile()
+# with profiler:  
+benchmark_bipartitioning_for_g_grid_graph(100, 50)
 
-profiler.disable()
-profiler.dump_stats('profile.stats')
+# profiler.disable()
+# profiler.dump_stats('profile.stats')
