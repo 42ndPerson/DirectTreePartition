@@ -14,51 +14,20 @@ from TwinGraph import TwinGraph
 from GraphNav import GraphNav
 from RegionTree import RegionTree
 from Euclid import *
+from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
 
-import numpy as np
-def generate_grid_graph(width: int, height: int) -> Tuple[List[Point], List[int], List[Tuple[int, int]]]:
-    w, h = int(width), int(height)
-    n = w * h
-
-    # Points
-    xs = np.tile(np.arange(w, dtype=int), h)
-    ys = np.repeat(np.arange(h, dtype=int), w)
-    points = [Point(int(x), int(y)) for x, y in zip(xs, ys)]
-
-    weights = [1] * n
-
-    # Horizontal edges
-    if w > 1 and h > 0:
-        start_h = (np.arange(h, dtype=int)[:, None] * w + np.arange(w - 1, dtype=int)[None, :]).ravel()
-        end_h = start_h + 1
-        horiz = np.stack((start_h, end_h), axis=1)
-    else:
-        horiz = np.empty((0, 2), dtype=int)
-
-    # Vertical edges
-    if h > 1 and w > 0:
-        start_v = (np.arange(h - 1, dtype=int)[:, None] * w + np.arange(w, dtype=int)[None, :]).ravel()
-        end_v = start_v + w
-        vert = np.stack((start_v, end_v), axis=1)
-    else:
-        vert = np.empty((0, 2), dtype=int)
-
-    edges = np.vstack((horiz, vert))
-    edgeIdxs = [(int(a), int(b)) for a, b in edges]
-
-    return points, weights, edgeIdxs
 
 def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
-    points, weights, adjecencies = generate_grid_graph(g, g)
+    points, weights, adjacencies = generate_grid_graph(g, g)
 
     # Create GerryChain graph
-    gerrychain_graph = Graph(adjecencies)
+    gerrychain_graph = Graph(adjacencies)
     for n in gerrychain_graph.nodes:
         gerrychain_graph.nodes[n]['population'] = 1
     gerrychain_target_population = len(gerrychain_graph.nodes) / 2
 
     # Create direct partition graph
-    graph = TwinGraph(points, weights, adjecencies)
+    graph = TwinGraph(points, weights, adjacencies)
     graph.animating = False
 
     # Run Gerrychain
@@ -70,6 +39,7 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
             pop_col='population',
             epsilon=0,
             spanning_tree_fn=tree.uniform_spanning_tree
+            # spanning_tree_fn=tree.random_spanning_tree
         )
         print("GerryChain Tree:", i)
     end = time.perf_counter()
@@ -102,7 +72,7 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
 
 # profiler = cProfile.Profile()
 # with profiler:  
-benchmark_bipartitioning_for_g_grid_graph(100, 50)
+benchmark_bipartitioning_for_g_grid_graph(16, 100)
 
 # profiler.disable()
 # profiler.dump_stats('profile.stats')

@@ -8,7 +8,18 @@ from TwinGraph import *
 from RegionTree import *
 
 class GraphNav:
-    __slots__ = ('graph', 'region_tree', 'tree_verts', 'tree_edges', 'bridge_edges', 'animating', 'animation_tracks')
+    __slots__ = (
+        'graph', 
+        'region_tree', 
+        'tree_verts', 
+        'tree_edges', 
+        'bridge_edges', 
+        'start_selection_method', 
+        'multi_walk_start_behavior', 
+        'multi_walk_attempts',
+        'animating', 
+        'animation_tracks'
+    )
 
     debug_lockout = False
 
@@ -20,10 +31,30 @@ class GraphNav:
 
     region_tree: RegionTree
 
+    start_selection_method: StartSelectionMethod
+    multi_walk_start_behavior: MultiWalkStartBehavior
+    multi_walk_attempts: int
+
     animating: bool
     animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir, int]]]]
 
-    def __init__(self, graph: TwinGraph, region_tree: RegionTree):
+    class StartSelectionMethod(Enum):
+        UNIFORM = 1
+        CENTRAL = 2
+        LINING = 3
+
+    class MultiWalkStartBehavior(Enum):
+        RESTART = 1
+        HIT_POINT = 2
+
+    def __init__(
+            self, 
+            graph: TwinGraph, 
+            region_tree: RegionTree, 
+            start_selection_method: StartSelectionMethod = StartSelectionMethod.UNIFORM,
+            multi_walk_start_behavior: MultiWalkStartBehavior = MultiWalkStartBehavior.HIT_POINT,
+            multi_walk_attempts: int = 7
+            ) -> None:
         self.graph = graph
 
         self.tree_verts = set()
@@ -32,25 +63,30 @@ class GraphNav:
 
         self.region_tree = region_tree
 
+        self.start_selection_method = start_selection_method
+        self.multi_walk_start_behavior = multi_walk_start_behavior
+        self.multi_walk_attempts = multi_walk_attempts
+
         self.animating = True
         self.animation_tracks = [[[]], [[]]] # One track for walk, one for region finding
 
     def run_two_split_attempt(self) -> Optional[List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]]:
         while self.region_tree.central_region is not None and self.region_tree.edge_center is None:
             # Select random starting vert within central region
-            # lining_verts = self.region_tree.central_region.get_interior_lining_verts()
-            # if len(lining_verts) == 0:
-            #     # print("Central region has no interior lining verts to start walk from.")
-            #     return None # No valid starting verts indicates region with one primal vert
-            # start_vert = random.choice(list(lining_verts))
-            # print("Tree Verts:", [v.id_str for v in self.tree_verts])
-            # print("Regions:", [(r.id_str, [v.id_str for v in r.get_perimeter_verts()], '\n') for r in self.region_tree.regions])
-            start_vert = self.region_tree.central_region.get_uniform_interior_vert()
-            # start_vert = self.region_tree.central_region.get_central_region_vert()
-            if start_vert is None:
-                # print("Central region has no interior verts to start walk from.")
+            match self.start_selection_method:
+                case GraphNav.StartSelectionMethod.UNIFORM:
+                    origin_vert = self.region_tree.central_region.get_uniform_interior_vert()
+                case GraphNav.StartSelectionMethod.CENTRAL:
+                    origin_vert = self.region_tree.central_region.get_central_region_vert()
+                case GraphNav.StartSelectionMethod.LINING:
+                    lining_verts = self.region_tree.central_region.get_interior_lining_verts()
+                    if len(lining_verts) == 0:
+                        return None # No valid starting verts indicates region with one primal vert
+                    origin_vert = random.choice(list(lining_verts))
+
+            if origin_vert is None:
                 return None
-            self.walk_division_from(self.region_tree.central_region, start_vert)
+            self.walk_division_from(self.region_tree.central_region, origin_vert)
             
         if self.region_tree.edge_center is not None:
             loop = self.traverse_clockwise_loop(self.region_tree.edge_center.twin_graph_edge, TwinGraph.EdgeDir.AB, {self.region_tree.edge_center.twin_graph_edge})
@@ -79,7 +115,7 @@ class GraphNav:
         else:
             return None
 
-    def walk_division_from(self, region_in: Optional[RegionTree.Region], start_vert: TwinGraph.Vert):
+    def walk_division_from(self, region_in: Optional[RegionTree.Region], origin_vert: TwinGraph.Vert):
         """
         Perform a walk and region tree update
         Start vert must be withing the region provided
@@ -87,7 +123,7 @@ class GraphNav:
         # Allow inefficient automatic region detection if none provided
         region = None
         if region_in is None:
-            perimeter_verts = self.get_enclosing_perimeter_verts(start_vert)
+            perimeter_verts = self.get_enclosing_perimeter_verts(origin_vert)
             for candidate_region in self.region_tree.regions:
                 if candidate_region.get_perimeter_verts().issuperset(perimeter_verts): # Perimeter verts will not contain interior corner verts of the perimeter
                     region = candidate_region
@@ -96,13 +132,20 @@ class GraphNav:
                 raise ValueError("Starting vert is not contained in any region.")
         else:
             region = region_in
-        # print("Starting walk division from region", region.id_str, "at vert", start_vert.id_str)
+        # print("Starting walk division from region", region.id_str, "at vert", origin_vert.id_str)
 
         # Build walk than progressively discover regions
         walk_edges: List[TwinGraph.QuadEdge] = []
         consumed_verts: Set[TwinGraph.Vert] = set()
-        for i in range(5): # Walk multiple times for a more likely successful division
-            new_walk_edges, new_consumed_verts = self.loop_erased_random_walk_from(start_vert, walk_edges, consumed_verts)
+        start_vert = origin_vert # Optionally allows restarting from hit point instead of origin point
+        for i in range(self.multi_walk_attempts): # Walk multiple times for a more likely successful division
+            new_walk_edges, new_consumed_verts, termination_vert = self.loop_erased_random_walk_from(start_vert, walk_edges, consumed_verts)
+            if self.multi_walk_start_behavior == GraphNav.MultiWalkStartBehavior.HIT_POINT:
+                if termination_vert not in self.tree_verts and termination_vert.role != TwinGraph.VertRole.DUAL_EXTERIOR:
+                    start_vert = termination_vert
+                else:
+                    start_vert = origin_vert # Restart from origin if hit tree
+
             walk_edges.extend(new_walk_edges)
             consumed_verts.update(new_consumed_verts)
         region_edge = self.commit_walk(walk_edges, consumed_verts)
@@ -181,9 +224,9 @@ class GraphNav:
         enclosed: Set[TwinGraph.Vert] = set()
 
         visited: Set[TwinGraph.Vert] = set()
-        queue: List[TwinGraph.Vert] = [start_primal]
+        queue: deque[TwinGraph.Vert] = deque([start_primal])
         while len(queue) > 0:
-            current = queue.pop(0)
+            current = queue.popleft()
             visited.add(current)
             enclosed.add(current)
 
@@ -200,7 +243,7 @@ class GraphNav:
             vert: TwinGraph.Vert,
             existing_walk_edges: List[TwinGraph.QuadEdge],
             existing_consumed_verts: Set[TwinGraph.Vert]
-        ) -> Tuple[List[TwinGraph.QuadEdge], Set[TwinGraph.Vert]]:
+        ) -> Tuple[List[TwinGraph.QuadEdge], Set[TwinGraph.Vert], TwinGraph.Vert]:
         assert vert not in self.tree_verts, "Starting vert is already in tree."
         # print("Starting loop-erased random walk from vert", vert.id_str)
 
@@ -212,6 +255,7 @@ class GraphNav:
         current_edge: TwinGraph.QuadEdge
         current_vert: TwinGraph.Vert
         consumed_verts: Set[TwinGraph.Vert] = set() # Track for self-collisions
+        termination_vert: Optional[TwinGraph.Vert] = None # Track to allow smart restart in walk_division
         walk_edges: List[TwinGraph.QuadEdge] = []
         escaped_existing_walk = False
 
@@ -225,6 +269,9 @@ class GraphNav:
                 rewind_vert: TwinGraph.Vert
                 rewind_vert, _ = current_edge.get_dual_dest_from(current_vert)
 
+                # TODO: Implement a more direct removal
+                #  Even a direct strategy would still be O(k) where k is the loop length
+                #  but it could avoid overhead
                 # print("Loop detected back to vert", current_vert.id_str, "; rewinding to remove loop.")
                 while rewind_vert != current_vert: # Since current_vert is in consumed_verts, this will always terminate
                     # print("Removing vert", rewind_vert.id_str)
@@ -255,7 +302,7 @@ class GraphNav:
             if self.animating:
                 # Convert walk_edges to the expected tuple format
                 if self.region_tree.central_region is not None:
-                    perimeter_edges = self.region_tree.central_region.dual_perimeter_edges # get_perimeter_edges()
+                    perimeter_edges = self.region_tree.central_region.dual_perimeter_edges
                 else:
                     perimeter_edges = set()
                 walk_tuples = [
@@ -282,13 +329,14 @@ class GraphNav:
                 ((current_edge.dual_AB is not None and current_edge.dual_AB.role == TwinGraph.VertRole.DUAL_EXTERIOR) or # Primal walk moves along edge with exterior dual
                  (current_edge.dual_BA is not None and current_edge.dual_BA.role == TwinGraph.VertRole.DUAL_EXTERIOR))
             ):
+                termination_vert = current_vert
                 break
 
             # Find next vert and edge
             current_edge = current_vert.cc_edges[random.randint(0, len(current_vert.cc_edges)-1)]
             current_vert, _ = current_edge.get_dual_dest_from(current_vert)
 
-        return walk_edges, consumed_verts
+        return walk_edges, consumed_verts, termination_vert
     
     def commit_walk(self, walk_edges: List[TwinGraph.QuadEdge], consumed_verts: Set[TwinGraph.Vert]) -> TwinGraph.QuadEdge: 
         # Commit walk to tree

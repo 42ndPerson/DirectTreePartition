@@ -3,8 +3,6 @@ from typing import Tuple
 
 import math
 
-from scipy.fftpack import diff
-
 class Point:
     __slots__ = ('x', 'y')
 

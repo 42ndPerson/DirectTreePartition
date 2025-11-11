@@ -183,22 +183,21 @@ class RegionTree:
             else:
                 self.point = Point(x_sum / scaling, y_sum / scaling)
             
-        def get_perimeter_verts(self) -> Set[TwinGraph.Vert]:
+        def get_perimeter_verts(self) -> Set[TwinGraph.Vert]: 
+            # Worthwhile to compute on demand as is only called when finding 
+            # starting point, which is an operation limited to few regions
             verts = set()
             for edge, dir in self.dual_perimeter:
                 src, _ = edge.get_dual_vert_pair(dir)
                 verts.add(src)
             return verts
-        
-        # def get_perimeter_edges(self) -> Set[TwinGraph.QuadEdge]:
-        #     return {edge for edge, _ in self.dual_perimeter}
 
         def get_interior_lining_verts(self) -> Set[TwinGraph.Vert]:
             if len(self.dual_perimeter) == 0:
                 return {e.get_dual_dest_from(self.region_tree.graph.external_dual_vert)[0] 
                         for e in self.region_tree.graph.external_dual_vert.cc_edges}
 
-            full_perimeter_edges = self.dual_perimeter_edges #self.get_perimeter_edges()
+            full_perimeter_edges = self.dual_perimeter_edges
             lining_verts: Set[TwinGraph.Vert] = set()
 
             for edge, dir in self.dual_perimeter:
