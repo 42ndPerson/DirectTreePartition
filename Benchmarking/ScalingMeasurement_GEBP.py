@@ -18,15 +18,14 @@ from Euclid import *
 
 from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
 
-versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Uniform", "DirectPartition_Central"]
+versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Uniform"]
 exec_funcs = {
     "GerryChain_Uniform": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=True),
     "GerryChain_MST": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=False),
     "DirectPartition_Uniform": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.UNIFORM),
-    "DirectPartition_Central": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.CENTRAL),
 }
-n_sizes = [256, 1024, 4096]#, 29241, 58564, 87616, 116964, 145924, 174724, 204304, 233289, 262144]
-reps = 100
+n_sizes = [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
+reps = 1000
 
 def perform_gerrychain_find(graph: Graph, use_uniform: bool):
     if use_uniform:
@@ -77,12 +76,14 @@ def generate_n_grid_graphs(n: int) -> Tuple[Graph, TwinGraph]:
 
     # Generate TwinGraph Source
     twin_graph = TwinGraph(points, weights, adjacencies)
+    twin_graph.animating = False
 
     return gerrychain_graph, twin_graph
 
 # @keep.running
 def bench():
-    with keep.running():
+    with keep.running(): # Prevent sleep during benchmarking
+        print("\n--- Starting Benchmarking ---\n")
         # Set up DF
         column_tuples = [(v, n) for v in versions for n in n_sizes]
         column_index = pd.MultiIndex.from_tuples(
@@ -111,6 +112,7 @@ def bench():
 
                 run_results = timeit.repeat(
                     stmt=lambda: exec_func(graphs),
+                    timer=time.process_time,
                     repeat=reps,
                     number=1 # Acceptable to eat overhead since slowest runs > ~0.01s
                 )
@@ -119,12 +121,15 @@ def bench():
                 avg_time = sum(run_results) / reps
                 print(f"    Average Time: {avg_time:.6f} seconds")
         
-        # Save results
-        df.to_csv("benchmarking_results.csv")
-        print("Saved benchmarking results to benchmarking_results.csv")
+            # Save results
+            df.to_csv("benchmarking_mini_results.csv")
+            print("Saved benchmarking results to benchmarking_mini_results.csv")
 
         print("\n--- Benchmarking Results ---")
         print(df.describe().T)
 
 if __name__ == "__main__":
+    # Note: It is essential to run this script as user initiated.
+    #  This should lead to a high Quality of Service (QoS) on macOS,
+    #  preventing the system from sending to E-cores.
     bench()

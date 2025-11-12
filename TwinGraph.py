@@ -45,7 +45,7 @@ class TwinGraph:
     def __init__(self, points: List[Point], weights: List[int], edgeIdxs: List[Tuple[int,int]]) -> None:
         assert len(points) == len(weights)
         zippedPointWeights = zip(points, weights)
-
+        
         # Create key data structures
         ordered_primal_verts = [TwinGraph.Vert(point, weight, TwinGraph.VertRole.PRIMAL) for point, weight in zippedPointWeights]
 
@@ -77,7 +77,7 @@ class TwinGraph:
 
         # Aux Data
         # Animation
-        self.animating = True
+        self.animating = False
         self.animation_tracks = [[[]],[[]],[[]],[[]]] # [0] = dual construction, [1] = primal map tree, [2] = dual map tree, [3] = dual edge annotation
 
         # Construct dual graph
