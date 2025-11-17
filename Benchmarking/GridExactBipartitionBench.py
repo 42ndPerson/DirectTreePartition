@@ -72,7 +72,7 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
 
 profiler = cProfile.Profile()
 with profiler:  
-    benchmark_bipartitioning_for_g_grid_graph(50, 100)
+    benchmark_bipartitioning_for_g_grid_graph(100, 100)
 
 profiler.disable()
 profiler.dump_stats('profile.stats')

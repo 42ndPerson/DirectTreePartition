@@ -79,7 +79,7 @@ class GraphNav:
                 case GraphNav.StartSelectionMethod.CENTRAL:
                     origin_vert = self.region_tree.central_region.get_central_region_vert()
                 case GraphNav.StartSelectionMethod.LINING:
-                    lining_verts = self.region_tree.central_region.get_interior_lining_verts()
+                    lining_verts, _ = self.region_tree.central_region.get_interior_lining_verts()
                     if len(lining_verts) == 0:
                         return None # No valid starting verts indicates region with one primal vert
                     origin_vert = random.choice(list(lining_verts))

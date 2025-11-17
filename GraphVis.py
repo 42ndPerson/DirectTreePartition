@@ -357,7 +357,7 @@ class GraphVis:
                             src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
                             src, dest = self.point_pair_graph_to_window(src, dest)
                             pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
-                        for vert in selected_region.get_interior_lining_verts():
+                        for vert in selected_region.get_interior_lining_verts()[0]:
                             pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(vert.point).tuple(), 5)
 
             # Push to screen
