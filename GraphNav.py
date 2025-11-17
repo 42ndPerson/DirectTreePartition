@@ -53,7 +53,7 @@ class GraphNav:
             region_tree: RegionTree, 
             start_selection_method: StartSelectionMethod = StartSelectionMethod.UNIFORM,
             multi_walk_start_behavior: MultiWalkStartBehavior = MultiWalkStartBehavior.HIT_POINT,
-            multi_walk_attempts: int = 7
+            multi_walk_attempts: int = 5
             ) -> None:
         self.graph = graph
 

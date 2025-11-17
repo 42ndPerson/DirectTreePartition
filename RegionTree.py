@@ -374,6 +374,30 @@ class RegionTree:
                         queue.append(neighbor)
             return dual_vert
 
+        def get_walk_random_interior_vert(self, steps: int = 100) -> Optional[TwinGraph.Vert]:
+            start_idx = random.randint(0, len(self.dual_perimeter) - 1)
+            src_vert: Optional[TwinGraph.Vert] = None
+            while src_vert is None:
+                boundary_start_edge, boundary_start_dir = self.dual_perimeter[start_idx]
+                boundary_next_edge, boundary_next_dir = self.dual_perimeter[start_idx+1 % len(self.dual_perimeter)]
+                _, boundary_next_vert = boundary_next_edge.get_dual_vert_pair(boundary_next_dir)
+                rotary_center, _ = boundary_start_edge.get_dual_vert_pair(boundary_start_dir)
+                if rotary_center is None:
+                    raise ValueError("RegionTree.Region.get_walk_random_interior_vert found edge with undefined dual vert.")
+                
+                next_edge, _ = boundary_start_edge.get_dual_cc_next_edge(rotary_center)
+                src_vert, _ = next_edge.get_dual_dest_from(rotary_center)
+                candidate_interior_vert, _ = next_edge.get_dual_dest_from(rotary_center)
+
+                # Note other perimeter verts can be within one edge of a perimeter vert as it would be a door
+                #  So we can only check against the next perimeter vert
+                if candidate_interior_vert is not boundary_next_vert:
+                    src_vert = candidate_interior_vert
+                else:
+                    start_idx = (start_idx + 1) % len(self.dual_perimeter)
+
+            
+
         def check_center(self):
             is_center = True
 
@@ -391,6 +415,12 @@ class RegionTree:
 
             if is_center:
                 if self.validate_split_possible():
+                    # TODO: Remove profiling
+                    old_region_size = self.region_tree.central_region.weight if self.region_tree.central_region is not None else None
+                    if old_region_size is not None:
+                        new_region_size = self.weight
+                        # print(f"Ratio: {old_region_size} -> {new_region_size} = {new_region_size / old_region_size:.4f}")
+
                     self.region_tree.central_region = self
                     # print("Region", self.id_str, "is central region of region tree", self.region_tree.id_str, "with", self.weight, "weight.")
                 else:

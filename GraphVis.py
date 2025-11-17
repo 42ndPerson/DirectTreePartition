@@ -152,6 +152,7 @@ class GraphVis:
                     if event.key == pg.K_c:
                         displaying_central_region = not displaying_central_region
                     if event.key == pg.K_q:
+                        print("")
                         self.graph_nav_dual.run_two_split_attempt()
                     if event.key == pg.K_m:
                         # Reset system

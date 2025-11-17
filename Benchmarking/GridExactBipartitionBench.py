@@ -31,19 +31,19 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
     graph.animating = False
 
     # Run Gerrychain
-    start = time.perf_counter()
-    for i in range(iters):
-        tree_partition = tree.bipartition_tree(
-            graph=gerrychain_graph,
-            pop_target=gerrychain_target_population,
-            pop_col='population',
-            epsilon=0,
-            spanning_tree_fn=tree.uniform_spanning_tree
-            # spanning_tree_fn=tree.random_spanning_tree
-        )
-        print("GerryChain Tree:", i)
-    end = time.perf_counter()
-    print(f"GerryChain Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
+    # start = time.perf_counter()
+    # for i in range(iters):
+    #     tree_partition = tree.bipartition_tree(
+    #         graph=gerrychain_graph,
+    #         pop_target=gerrychain_target_population,
+    #         pop_col='population',
+    #         epsilon=0,
+    #         spanning_tree_fn=tree.uniform_spanning_tree
+    #         # spanning_tree_fn=tree.random_spanning_tree
+    #     )
+    #     print("GerryChain Tree:", i)
+    # end = time.perf_counter()
+    # print(f"GerryChain Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
     
     # Run direct partitioning
     start = time.perf_counter()
@@ -70,9 +70,9 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
     end = time.perf_counter()
     print(f"Direct Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
 
-# profiler = cProfile.Profile()
-# with profiler:  
-benchmark_bipartitioning_for_g_grid_graph(16, 100)
+profiler = cProfile.Profile()
+with profiler:  
+    benchmark_bipartitioning_for_g_grid_graph(50, 100)
 
-# profiler.disable()
-# profiler.dump_stats('profile.stats')
+profiler.disable()
+profiler.dump_stats('profile.stats')

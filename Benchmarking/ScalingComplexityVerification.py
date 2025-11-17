@@ -250,25 +250,42 @@ def analyze_versions(data: pd.DataFrame, models: dict):
             'version': version,
             'k_exponent': np.nan if log_log_reg is None else float(log_log_reg.slope),
             'k_r2': np.nan if log_log_reg is None else float(log_log_reg.rvalue**2),
+            'k_intercept': np.nan if log_log_reg is None else float(log_log_reg.intercept), # <-- MODIFIED: Added intercept
         }
         for name in models.keys():
             r2v = model_results.get(name, {}).get('r_squared', np.nan)
             row[f'R2[{name}]'] = r2v
+        
+        # MODIFIED: Get slope and intercept for best model
         if finite_models and best_fit_name_selected is not None:
+            best_reg_obj = model_results[best_fit_name_selected]['reg_object'] # Get the reg object
             row['best_model'] = best_fit_name_selected
             row['best_model_r2'] = float(model_results[best_fit_name_selected]['r_squared'])
+            row['best_model_slope'] = np.nan if best_reg_obj is None else float(best_reg_obj.slope)
+            row['best_model_intercept'] = np.nan if best_reg_obj is None else float(best_reg_obj.intercept)
         else:
             row['best_model'] = None
             row['best_model_r2'] = np.nan
+            row['best_model_slope'] = np.nan
+            row['best_model_intercept'] = np.nan
+            
         summary_rows.append(row)
 
     # --- 5. Print summary table across versions ---
     if summary_rows:
         summary_df = pd.DataFrame(summary_rows)
-        # Order columns: version, k_exponent, k_r2, best_model, best_model_r2, then model R2s
-        base_cols = ['version', 'k_exponent', 'k_r2', 'best_model', 'best_model_r2']
+        # MODIFIED: Update base_cols to include new fields
+        base_cols = [
+            'version', 
+            'k_exponent', 'k_r2', 'k_intercept', 
+            'best_model', 'best_model_r2', 'best_model_slope', 'best_model_intercept'
+        ]
         model_cols = [c for c in summary_df.columns if c.startswith('R2[')]
-        summary_df = summary_df[base_cols + model_cols]
+        
+        # Handle case where some new columns might not exist if all runs failed
+        final_cols = [c for c in base_cols if c in summary_df.columns] + model_cols
+        
+        summary_df = summary_df[final_cols]
         print("\n====== Summary Across Versions ======")
         print(summary_df.to_string(index=False, float_format=lambda x: f"{x:.4f}" if np.isfinite(x) else "nan"))
         # Optional: save to CSV for later inspection
