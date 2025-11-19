@@ -696,73 +696,82 @@ class RegionTree:
             # Special case: no perimeter means whole-graph; perform an unrestricted walk
             if len(self.dual_perimeter) == 0:
                 vert = random.choice(list(self.region_tree.graph.dualVerts))
-                # Minimal timing output for whole-graph case
-                # print("get_walk_random_interior_vert timings: perimeter=0.000000s, start_search=0.000000s, walk=0.000000s (no perimeter)")
                 return vert
 
             # Build perimeter vertex set to avoid stepping onto boundary
-            t_perimeter_start = time.perf_counter()
             perimeter_verts = self.get_perimeter_verts()
-            t_perimeter_end = time.perf_counter()
 
+            # Helpers ------------------------------------------------------
+            def _find_interior_start_vert() -> Optional[TwinGraph.Vert]:
+                """Find an interior start vertex adjacent to the perimeter without landing on a perimeter vert.
+                Preserves original sweep semantics.
+                """
+                start_idx = random.randint(0, len(self.dual_perimeter) - 1) 
+                offset = 0
+                while offset < len(self.dual_perimeter):
+                    boundary_start_edge, boundary_start_dir = self.dual_perimeter[(start_idx + offset) % len(self.dual_perimeter)] 
+                    boundary_next_edge, boundary_next_dir = self.dual_perimeter[(start_idx + offset + 1) % len(self.dual_perimeter)] 
+                    _, boundary_next_vert = boundary_next_edge.get_dual_vert_pair(boundary_next_dir) 
+                    _, rotary_center = boundary_start_edge.get_dual_vert_pair(boundary_start_dir) 
+                    
+                    if rotary_center is None:
+                        raise ValueError("RegionTree.Region.get_walk_random_interior_vert found edge with undefined dual vert.") 
+
+                    while True:
+                        next_edge, _ = boundary_start_edge.get_dual_cc_next_edge(rotary_center) 
+                        candidate_interior_vert, _ = next_edge.get_dual_dest_from(rotary_center) 
+
+                        # Vert in sweep that lies between boundary_start and boundary_next is interior
+                        if candidate_interior_vert is not boundary_next_vert:
+                            return candidate_interior_vert
+
+                        # Stop upon reaching next boundary edge
+                        if next_edge == boundary_next_edge: 
+                            break
+
+                    # Try next boundary position
+                    offset += 1
+                return None
+
+            def _get_next_valid_step(curr: TwinGraph.Vert) -> Optional[TwinGraph.Vert]:
+                """Selects a random interior neighbor without allocating a list."""
+                edges = curr.cc_edges
+                degree = len(edges)
+                if degree == 0:
+                    return None
+                
+                # Start at a random offset and probe linearly (Zero-Allocation)
+                start_edge_idx = random.randint(0, degree - 1)
+                for i in range(degree):
+                    idx = (start_edge_idx + i) % degree
+                    edge = edges[idx]
+                    neighbor, _ = edge.get_dual_dest_from(curr)
+                    
+                    if neighbor not in perimeter_verts:
+                        return neighbor
+                return None
+
+            def _walk_interior(start: TwinGraph.Vert, step_cap: int) -> TwinGraph.Vert:
+                """Walk up to step_cap steps strictly within interior; terminate early if stuck."""
+                current = start
+                for _ in range(max(0, step_cap)):
+                    next_vert = _get_next_valid_step(current)
+                    if next_vert is None:
+                        break # Stuck: no interior neighbors
+                    current = next_vert
+                return current
+
+            # Execution ------------------------------------------------------
+            
             # Find an interior start vertex adjacent to the perimeter without landing on a perimeter vert
-            start_idx = random.randint(0, len(self.dual_perimeter) - 1)
-            src_vert: Optional[TwinGraph.Vert] = None
-            offset = 0
-            t_start_search_start = time.perf_counter()
-            while offset < len(self.dual_perimeter):
-                boundary_start_edge, boundary_start_dir = self.dual_perimeter[(start_idx + offset) % len(self.dual_perimeter)]
-                boundary_next_edge, boundary_next_dir = self.dual_perimeter[(start_idx + offset + 1) % len(self.dual_perimeter)]
-                _, boundary_next_vert = boundary_next_edge.get_dual_vert_pair(boundary_next_dir)
-                _, rotary_center = boundary_start_edge.get_dual_vert_pair(boundary_start_dir)
-                if rotary_center is None:
-                    raise ValueError("RegionTree.Region.get_walk_random_interior_vert found edge with undefined dual vert.")
-
-                interior_vert_found = False
-                while True:
-                    next_edge, _ = boundary_start_edge.get_dual_cc_next_edge(rotary_center)
-                    candidate_interior_vert, _ = next_edge.get_dual_dest_from(rotary_center)
-
-                    # Vert in sweep that lies between boundary_start and boundary_next is interior
-                    if candidate_interior_vert is not boundary_next_vert:
-                        src_vert = candidate_interior_vert
-                        interior_vert_found = True
-                        break
-
-                    # Stop upon reaching next boundary edge
-                    if next_edge == boundary_next_edge:
-                        break
-
-                if interior_vert_found:
-                    break
-
-                # Try next boundary position
-                offset += 1
-            t_start_search_end = time.perf_counter()
+            src_vert: Optional[TwinGraph.Vert] = _find_interior_start_vert()
 
             # If no interior start found, there is no interior to walk
-            if src_vert is None:
-                # print(f"get_walk_random_interior_vert timings: perimeter={t_perimeter_end - t_perimeter_start:.6f}s, start_search={t_start_search_end - t_start_search_start:.6f}s, walk=0.000000s (no interior)")
+            if src_vert is None: 
                 return None
 
             # Random walk strictly within interior (avoid stepping onto perimeter verts)
-            t0 = time.perf_counter()
-            current = src_vert
-            for _ in range(max(0, steps)):
-                # Collect interior neighbors once; if none, walk is stuck and we exit early.
-                interior_neighbors = []
-                for neighbor_edge in current.cc_edges:
-                    neighbor_vert, _ = neighbor_edge.get_dual_dest_from(current)
-                    if neighbor_vert in perimeter_verts:
-                        continue
-                    interior_neighbors.append(neighbor_vert)
-                if not interior_neighbors:
-                    # Stuck: all neighbors are perimeter (no legal interior move). Break to avoid infinite retry loop.
-                    break
-                current = random.choice(interior_neighbors)
-            t1 = time.perf_counter()
-            # Consolidated timing summary
-            # print(f"get_walk_random_interior_vert timings: perimeter={t_perimeter_end - t_perimeter_start:.6f}s, start_search={t_start_search_end - t_start_search_start:.6f}s, walk={t1 - t0:.6f}s")
+            current = _walk_interior(src_vert, steps)
 
             return current
 
