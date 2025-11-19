@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Tuple, Set, Dict, Optional, Generator
 from enum import Enum
+import numpy as np
 import sys
 
 from collections import deque
@@ -21,6 +22,10 @@ class TwinGraph:
         'upperYBound',
         'primalMap',
         'dualMap',
+        'idx_to_dfs_in',
+        'idx_to_dfs_out',
+        'idx_to_dfs_in_np',
+        'idx_to_dfs_out_np',
         'animating',
         'animation_tracks'
     )
@@ -38,6 +43,10 @@ class TwinGraph:
 
     primalMap: MapTree
     dualMap: MapTree
+    idx_to_dfs_in: List[int]
+    idx_to_dfs_out: List[int]
+    idx_to_dfs_in_np: np.ndarray
+    idx_to_dfs_out_np: np.ndarray
 
     animating: bool
     animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir, int]]]]
@@ -87,18 +96,10 @@ class TwinGraph:
         sys.setrecursionlimit(2*len(self.primalVerts)) # Increase recursion limit to allow deep recursions in large graphs
         self.primalMap = self.generate_map_tree(next(iter(self.primalVerts)), TwinGraph.VertRole.PRIMAL) #TODO: Find better start vert for primal
         self.dualMap = self.generate_map_tree(next(iter(self.dualVerts)), TwinGraph.VertRole.DUAL)
+        # self.populate_index_to_dfs_lookup()
 
         # Annotate dual edges for primal counting
         self.annotate_dual_edges_for_primal_counting()
-
-        # Populate retrieval caches
-        # for edge in self.edges: # TAG: Profiling
-        #     vert1, vert2 = edge.get_dual_vert_pair(TwinGraph.EdgeDir.AB)
-        #     edge.dual_cc_next_retrieval_cache = {
-        #         id(vert1): edge.get_dual_cc_next_edge(vert1),
-        #         id(vert2): edge.get_dual_cc_next_edge(vert2)
-        #     }
-
             
     def construct_dual(self) -> None:
         edges_AB: Set[TwinGraph.QuadEdge] = set(self.edges)
@@ -254,6 +255,30 @@ class TwinGraph:
         dfs(root_vert, root, 0)
         return TwinGraph.MapTree(root)
     
+    def populate_index_to_dfs_lookup(self) -> None:
+        self.idx_to_dfs_in = [0] * (len(self.primalVerts) + len(self.dualVerts))
+        self.idx_to_dfs_out = [0] * (len(self.primalVerts) + len(self.dualVerts))
+        # Preallocate NumPy arrays (int32) alongside list versions for optional vectorized operations
+        self.idx_to_dfs_in_np = np.empty(len(self.idx_to_dfs_in), dtype=np.int32)
+        self.idx_to_dfs_out_np = np.empty(len(self.idx_to_dfs_out), dtype=np.int32)
+
+        # print("Max Vert Index:", max(vert.index for vert in self.primalVerts.union(self.dualVerts)))
+        for vert in self.primalVerts:
+            dfs_in = vert.map_tree_vert.dfs_in
+            dfs_out = vert.map_tree_vert.dfs_out
+            self.idx_to_dfs_in[vert.index] = dfs_in
+            self.idx_to_dfs_out[vert.index] = dfs_out
+            self.idx_to_dfs_in_np[vert.index] = dfs_in
+            self.idx_to_dfs_out_np[vert.index] = dfs_out
+
+        for vert in self.dualVerts:
+            dfs_in = vert.map_tree_vert.dfs_in
+            dfs_out = vert.map_tree_vert.dfs_out
+            self.idx_to_dfs_in[vert.index] = dfs_in
+            self.idx_to_dfs_out[vert.index] = dfs_out
+            self.idx_to_dfs_in_np[vert.index] = dfs_in
+            self.idx_to_dfs_out_np[vert.index] = dfs_out
+
     def map_tree_reverse_dfs_iterator(self, tree: TwinGraph.MapTree) -> Generator[TwinGraph.MapTree.MapTreeVert, None, None]:
         def dfs(vert: TwinGraph.MapTree.MapTreeVert):
             for edge in vert.out_edges:
@@ -384,6 +409,8 @@ class TwinGraph:
                 return TwinGraph.EdgeDir.BA
             if self == TwinGraph.EdgeDir.BA:
                 return TwinGraph.EdgeDir.AB
+            # Fallback to satisfy type checkers; should be unreachable
+            raise ValueError("Invalid EdgeDir value")
 
     class VertRole(Enum):
         PRIMAL = 1
@@ -403,6 +430,7 @@ class TwinGraph:
             'role',
             'cc_edges',
             'map_tree_vert',
+            'index',
             'id_str'
         )
 
@@ -412,10 +440,11 @@ class TwinGraph:
         cc_edges: List[TwinGraph.QuadEdge]
 
         map_tree_vert: TwinGraph.MapTree.MapTreeVert
-
-        # Instance labeling
-        index: int = 0
+        index: int
         id_str: str
+
+        # Instance labeling counter (class-level)
+        _counter = 0
 
         # Counterclockwise edges must be sorted
         def __init__(self, point: Point, weight: int, role: TwinGraph.VertRole, counterclockwiseEdges: List[TwinGraph.QuadEdge]=[]) -> None:
@@ -428,8 +457,10 @@ class TwinGraph:
 
             self.map_tree_vert = TwinGraph.MapTree.MapTreeVert(self)
 
-            self.id_str = ("P" if role.is_primal() else "D") + f'{TwinGraph.Vert.index:x}' # Hexadecimal ID for easier reading in debug
-            TwinGraph.Vert.index += 1
+            # Assign a stable per-vertex index (0..N-1 across primal+dual)
+            self.index = TwinGraph.Vert._counter
+            self.id_str = ("P" if role.is_primal() else "D") + f'{self.index:x}' # Hexadecimal ID for easier reading in debug
+            TwinGraph.Vert._counter += 1
 
         # Edges must already have links to calling vertex
         def register_edges(self, edges: List[TwinGraph.QuadEdge]) -> None:

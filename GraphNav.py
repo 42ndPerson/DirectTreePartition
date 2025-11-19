@@ -42,6 +42,7 @@ class GraphNav:
         UNIFORM = 1
         CENTRAL = 2
         LINING = 3
+        WALK = 4
 
     class MultiWalkStartBehavior(Enum):
         RESTART = 1
@@ -51,7 +52,7 @@ class GraphNav:
             self, 
             graph: TwinGraph, 
             region_tree: RegionTree, 
-            start_selection_method: StartSelectionMethod = StartSelectionMethod.UNIFORM,
+            start_selection_method: StartSelectionMethod = StartSelectionMethod.WALK,
             multi_walk_start_behavior: MultiWalkStartBehavior = MultiWalkStartBehavior.HIT_POINT,
             multi_walk_attempts: int = 5
             ) -> None:
@@ -83,6 +84,8 @@ class GraphNav:
                     if len(lining_verts) == 0:
                         return None # No valid starting verts indicates region with one primal vert
                     origin_vert = random.choice(list(lining_verts))
+                case GraphNav.StartSelectionMethod.WALK:
+                    origin_vert = self.region_tree.central_region.get_walk_random_interior_vert(steps=(len(self.region_tree.central_region.dual_perimeter)//1))
 
             if origin_vert is None:
                 return None

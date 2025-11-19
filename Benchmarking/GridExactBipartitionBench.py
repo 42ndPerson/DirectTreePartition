@@ -31,44 +31,45 @@ def benchmark_bipartitioning_for_g_grid_graph(g: int, iters: int):
     graph.animating = False
 
     # Run Gerrychain
-    # start = time.perf_counter()
-    # for i in range(iters):
-    #     tree_partition = tree.bipartition_tree(
-    #         graph=gerrychain_graph,
-    #         pop_target=gerrychain_target_population,
-    #         pop_col='population',
-    #         epsilon=0,
-    #         spanning_tree_fn=tree.uniform_spanning_tree
-    #         # spanning_tree_fn=tree.random_spanning_tree
-    #     )
-    #     print("GerryChain Tree:", i)
-    # end = time.perf_counter()
-    # print(f"GerryChain Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
-    
-    # Run direct partitioning
     start = time.perf_counter()
     for i in range(iters):
-        loop = None
-        idx = 0
-        graph_nav = None
-        while loop == None:
-            region_tree = RegionTree(graph)
-            graph_nav = GraphNav(graph, region_tree)
-            graph_nav.animating = False
-
-            loop = graph_nav.run_two_split_attempt()
-
-            idx += 1
-            if idx > 100000:
-                raise Exception("Failed to find bipartition after 100000 attempts")
+        tree_partition = tree.bipartition_tree(
+            graph=gerrychain_graph,
+            pop_target=gerrychain_target_population,
+            pop_col='population',
+            epsilon=0,
+            spanning_tree_fn=tree.uniform_spanning_tree,
             
-        if graph_nav is None:
-            raise Exception("GraphNav not initialized properly.")
-        partition_1 = graph_nav.get_enclosed_primal_verts(loop)
-        partition_2 = set(graph.primalVerts) - partition_1
-        print("Direct Bipartition:", i, "after", idx, "attempts")
+            # spanning_tree_fn=tree.random_spanning_tree
+        )
+        print("GerryChain Tree:", i)
     end = time.perf_counter()
-    print(f"Direct Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
+    print(f"GerryChain Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
+    
+    # Run direct partitioning
+    # start = time.perf_counter()
+    # for i in range(iters):
+    #     loop = None
+    #     idx = 0
+    #     graph_nav = None
+    #     while loop == None:
+    #         region_tree = RegionTree(graph)
+    #         graph_nav = GraphNav(graph, region_tree)
+    #         graph_nav.animating = False
+
+    #         loop = graph_nav.run_two_split_attempt()
+
+    #         idx += 1
+    #         if idx > 100000:
+    #             raise Exception("Failed to find bipartition after 100000 attempts")
+            
+    #     if graph_nav is None:
+    #         raise Exception("GraphNav not initialized properly.")
+    #     partition_1 = graph_nav.get_enclosed_primal_verts(loop)
+    #     partition_2 = set(graph.primalVerts) - partition_1
+    #     print("Direct Bipartition:", i, "after", idx, "attempts")
+    # end = time.perf_counter()
+    # print(f"Direct Bipartitioning Time for {iters} iterations: {end - start:.4f} seconds")
 
 profiler = cProfile.Profile()
 with profiler:  

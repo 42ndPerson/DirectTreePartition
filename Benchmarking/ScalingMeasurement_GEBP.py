@@ -18,13 +18,13 @@ from Euclid import *
 
 from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
 
-versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Uniform"]
+versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Walk_Sample"]
 exec_funcs = {
     "GerryChain_Uniform": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=True),
     "GerryChain_MST": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=False),
-    "DirectPartition_Uniform": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.UNIFORM),
+    "DirectPartition_Walk_Sample": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.WALK),
 }
-n_sizes = [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
+n_sizes = [256, 1296, 2500, 3600, 4624, 5776, 6724, 7744, 8836, 10000] # [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
 reps = 1000
 
 def perform_gerrychain_find(graph: Graph, use_uniform: bool):
@@ -122,8 +122,8 @@ def bench():
                 print(f"    Average Time: {avg_time:.6f} seconds")
         
             # Save results
-            df.to_csv("benchmarking_mini_results.csv")
-            print("Saved benchmarking results to benchmarking_mini_results.csv")
+            df.to_csv("benchmarking_results.csv")
+            print("Saved benchmarking results to benchmarking_results.csv")
 
         print("\n--- Benchmarking Results ---")
         print(df.describe().T)

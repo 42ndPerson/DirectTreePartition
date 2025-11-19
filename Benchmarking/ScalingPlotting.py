@@ -2,7 +2,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-def plot_results(csv_file="benchmarking_mini_results.csv"):
+def plot_results(csv_file="benchmarking_results.csv"):
     """
     Reads the benchmark CSV and plots the results as a line chart
     with confidence intervals.
@@ -89,7 +89,7 @@ def plot_results(csv_file="benchmarking_mini_results.csv"):
     plt.tight_layout(rect=(0, 0, 0.8, 1)) # Adjust layout to make room for legend
     
     # Save the figure
-    output_filename = "benchmark_mini_performance_chart.png"
+    output_filename = "benchmark_performance_chart.png"
     plt.savefig(output_filename)
     print(f"Chart saved as {output_filename}")
 
