@@ -2,7 +2,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-def plot_results(csv_file="benchmarking_results.csv"):
+def plot_results(csv_file="benchmarking_tree_explore_results.csv"):
     """
     Reads the benchmark CSV and plots the results as a line chart
     with confidence intervals.
@@ -78,7 +78,7 @@ def plot_results(csv_file="benchmarking_results.csv"):
     ax.set_yscale('linear')
 
     # Set titles and labels
-    plt.title('Algorithm Performance by Graph Size', fontsize=16, weight='bold')
+    plt.title('(Tree Explore) Algorithm Performance by Graph Size', fontsize=16, weight='bold')
     plt.xlabel('Graph Size (n_size)', fontsize=12)
     plt.ylabel('Mean Duration (seconds)', fontsize=12)
 
@@ -89,7 +89,7 @@ def plot_results(csv_file="benchmarking_results.csv"):
     plt.tight_layout(rect=(0, 0, 0.8, 1)) # Adjust layout to make room for legend
     
     # Save the figure
-    output_filename = "benchmark_performance_chart.png"
+    output_filename = "benchmark_tree_explore_performance_chart.png"
     plt.savefig(output_filename)
     print(f"Chart saved as {output_filename}")
 

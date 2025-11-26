@@ -703,75 +703,68 @@ class RegionTree:
 
             # Helpers ------------------------------------------------------
             def _find_interior_start_vert() -> Optional[TwinGraph.Vert]:
-                """Find an interior start vertex adjacent to the perimeter without landing on a perimeter vert.
-                Preserves original sweep semantics.
-                """
-                start_idx = random.randint(0, len(self.dual_perimeter) - 1) 
+                """Find an interior start vertex adjacent to the perimeter without landing on a perimeter vert."""
+                start_idx = random.randint(0, len(self.dual_perimeter) - 1)
                 offset = 0
                 while offset < len(self.dual_perimeter):
-                    boundary_start_edge, boundary_start_dir = self.dual_perimeter[(start_idx + offset) % len(self.dual_perimeter)] 
-                    boundary_next_edge, boundary_next_dir = self.dual_perimeter[(start_idx + offset + 1) % len(self.dual_perimeter)] 
-                    _, boundary_next_vert = boundary_next_edge.get_dual_vert_pair(boundary_next_dir) 
-                    _, rotary_center = boundary_start_edge.get_dual_vert_pair(boundary_start_dir) 
+                    boundary_start_edge, boundary_start_dir = self.dual_perimeter[(start_idx + offset) % len(self.dual_perimeter)]
+                    boundary_next_edge, boundary_next_dir = self.dual_perimeter[(start_idx + offset + 1) % len(self.dual_perimeter)]
+                    _, boundary_next_vert = boundary_next_edge.get_dual_vert_pair(boundary_next_dir)
+                    _, rotary_center = boundary_start_edge.get_dual_vert_pair(boundary_start_dir)
                     
                     if rotary_center is None:
-                        raise ValueError("RegionTree.Region.get_walk_random_interior_vert found edge with undefined dual vert.") 
+                        raise ValueError("RegionTree.Region.get_walk_random_interior_vert found edge with undefined dual vert.")
 
                     while True:
-                        next_edge, _ = boundary_start_edge.get_dual_cc_next_edge(rotary_center) 
-                        candidate_interior_vert, _ = next_edge.get_dual_dest_from(rotary_center) 
+                        next_edge, _ = boundary_start_edge.get_dual_cc_next_edge(rotary_center)
+                        candidate_interior_vert, _ = next_edge.get_dual_dest_from(rotary_center)
 
                         # Vert in sweep that lies between boundary_start and boundary_next is interior
                         if candidate_interior_vert is not boundary_next_vert:
                             return candidate_interior_vert
 
-                        # Stop upon reaching next boundary edge
-                        if next_edge == boundary_next_edge: 
+                        if next_edge == boundary_next_edge:
                             break
 
-                    # Try next boundary position
                     offset += 1
                 return None
 
-            def _get_next_valid_step(curr: TwinGraph.Vert) -> Optional[TwinGraph.Vert]:
-                """Selects a random interior neighbor without allocating a list."""
-                edges = curr.cc_edges
-                degree = len(edges)
-                if degree == 0:
-                    return None
-                
-                # Start at a random offset and probe linearly (Zero-Allocation)
-                start_edge_idx = random.randint(0, degree - 1)
-                for i in range(degree):
-                    idx = (start_edge_idx + i) % degree
-                    edge = edges[idx]
-                    neighbor, _ = edge.get_dual_dest_from(curr)
-                    
-                    if neighbor not in perimeter_verts:
-                        return neighbor
-                return None
-
-            def _walk_interior(start: TwinGraph.Vert, step_cap: int) -> TwinGraph.Vert:
-                """Walk up to step_cap steps strictly within interior; terminate early if stuck."""
+            def _walk_interior_optimistic(start: TwinGraph.Vert, step_cap: int) -> TwinGraph.Vert:
+                """
+                Optimistic Walk: Blindly picks a direction. 
+                If it hits a wall (perimeter), it 'rewinds' (stays put) and burns the step.
+                """
                 current = start
                 for _ in range(max(0, step_cap)):
-                    next_vert = _get_next_valid_step(current)
-                    if next_vert is None:
-                        break # Stuck: no interior neighbors
-                    current = next_vert
+                    edges = current.cc_edges
+                    degree = len(edges)
+                    if degree == 0:
+                        break
+
+                    # 1. Blindly pick a random edge
+                    # random.choice is slightly faster than randint + indexing for lists in Python
+                    edge = random.choice(edges) 
+                    
+                    # 2. Step
+                    candidate, _ = edge.get_dual_dest_from(current)
+
+                    # 3. Check (Rewind if invalid)
+                    if candidate not in perimeter_verts:
+                        current = candidate
+                    # else: 
+                    #   Hit a wall. Effectively "rewind" by keeping 'current' as is.
+                    #   We accept the 'wasted' step to avoid the cost of finding a valid one.
+                
                 return current
 
             # Execution ------------------------------------------------------
             
-            # Find an interior start vertex adjacent to the perimeter without landing on a perimeter vert
             src_vert: Optional[TwinGraph.Vert] = _find_interior_start_vert()
 
-            # If no interior start found, there is no interior to walk
-            if src_vert is None: 
+            if src_vert is None:
                 return None
 
-            # Random walk strictly within interior (avoid stepping onto perimeter verts)
-            current = _walk_interior(src_vert, steps)
+            current = _walk_interior_optimistic(src_vert, steps)
 
             return current
 
