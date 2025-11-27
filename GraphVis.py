@@ -23,7 +23,7 @@ class GraphVis:
         pink = (255,50,255)
         orange = (255,70,0)
 
-    def __init__(self, graph: TwinGraph, graph_nav_dual: GraphNav, region_tree: RegionTree) -> None:
+    def __init__(self, graph: TwinGraph, graph_nav_dual: GraphNav, region_tree: RegionTree, epsilon: float=0.0) -> None:
         # Graph
         self.graph = graph
 
@@ -32,6 +32,9 @@ class GraphVis:
 
         # RegionTree
         self.region_tree = region_tree
+
+        # Epsilon
+        self.epsilon = epsilon
 
         # Init
         pg.init()
@@ -156,7 +159,7 @@ class GraphVis:
                         self.graph_nav_dual.run_two_split_attempt()
                     if event.key == pg.K_m:
                         # Reset system
-                        self.region_tree = RegionTree(self.graph)
+                        self.region_tree = RegionTree(self.graph, epsilon=self.epsilon)
                         self.graph_nav_dual = GraphNav(self.graph, self.region_tree)
                         animation_deck = self.graph.animation_tracks + self.graph_nav_dual.animation_tracks
                     if pg.K_1 <= event.key <= pg.K_9: # Select animation track
@@ -296,11 +299,12 @@ class GraphVis:
                 pg.draw.line(screen, color, src.tuple(), dest.tuple(), 5)
 
             # Highlight central region
-            if displaying_central_region and self.region_tree.central_region is not None:
-                for edge, dir in self.region_tree.central_region.dual_perimeter:
-                    src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
-                    src, dest = self.point_pair_graph_to_window(src, dest)
-                    pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
+            # if displaying_central_region and len(self.graph_nav_dual.target_regions) > 0:
+            #     for region in self.graph_nav_dual.target_regions:
+            #         for edge, dir in region.dual_perimeter:
+            #             src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+            #             src, dest = self.point_pair_graph_to_window(src, dest)
+            #             pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
 
             # Draw vertex labels
             if displaying_labels:

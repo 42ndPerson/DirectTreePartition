@@ -3,6 +3,7 @@ import bisect
 from itertools import pairwise
 import random
 from typing import List, Tuple, Set, NamedTuple
+from collections import deque
 from enum import Enum
 import warnings
 from time import sleep
@@ -25,8 +26,9 @@ class RegionTree:
         'regions', 
         'edges', 
         'graph', 
-        'central_region', 
-        'edge_center',  
+        'total_weight',
+        'epsilon', 
+        'edge_centers',  
         'id_str'
     )
 
@@ -36,8 +38,9 @@ class RegionTree:
     graph: TwinGraph
 
     # Central region and edge
-    central_region: Optional[RegionTree.Region]
-    edge_center: Optional[RegionTree.Edge]
+    total_weight: float
+    epsilon: float
+    edge_centers: Set[RegionTree.Edge]
 
     # Instance labeling
     instance_counter: int = 0
@@ -45,7 +48,7 @@ class RegionTree:
 
     type EdgeDir = TwinGraph.EdgeDir
 
-    def __init__(self, graph: TwinGraph) -> None:
+    def __init__(self, graph: TwinGraph, epsilon: float = 0, src_perimeter: List[Tuple[TwinGraph.QuadEdge, TwinGraph.EdgeDir]]=[]) -> None:
         # The src region of a region tree is perimter-less
         # The only perimeter it could have would be the all
         #  the edges to the dual exterior listed twice. 
@@ -55,15 +58,16 @@ class RegionTree:
         # We are able to omit the perimeter to solve this
         #  problem because the graph is finite, so all paths
         #  are contained naturally by the graph structure.
-        total_weight = graph.total_primal_weight
+        self.total_weight = graph.total_primal_weight
+        self.epsilon = epsilon # Allowable deviation from half of total weight for each half (difference is 2 * epsilon * total_weight)
+        
         self.regions = set()
-        self.add_region(RegionTree.Region(total_weight, [])) # Start with single region containing whole graph
+        self.add_region(RegionTree.Region(self.total_weight, src_perimeter)) # Start with single region containing whole graph
         self.edges = set()
 
         self.graph = graph
 
-        self.central_region = next(iter(self.regions))
-        self.edge_center = None
+        self.edge_centers = set()
 
         self.id_str = f"RTree{RegionTree.instance_counter}"
         RegionTree.instance_counter += 1
@@ -76,9 +80,6 @@ class RegionTree:
         for edge in list(vert.region_edges):
             self.remove_edge(edge)
         self.regions.remove(vert)
-
-        if vert == self.central_region:
-            self.central_region = None
 
     def add_edge(self, edge: RegionTree.Edge) -> None:
         self.edges.add(edge)
@@ -767,10 +768,8 @@ class RegionTree:
             current = _walk_interior_optimistic(src_vert, steps)
 
             return current
-
-            
-
-        def check_center(self):
+        
+        def check_center(self) -> bool:
             is_center = True
 
             for edge in self.region_edges:
@@ -778,49 +777,53 @@ class RegionTree:
                     raise ValueError("RegionTree.Region.check_center found edge with undefined ab_weight_differential.")
                 
                 opposite_weight = edge.get_opposite_side_weight(self)
-                midpoint_weight = self.region_tree.graph.total_primal_weight / 2
+                midpoint_weight = self.region_tree.total_weight / 2
+                epsilon_buffer = self.region_tree.epsilon * midpoint_weight
                 if opposite_weight is None:
                     raise ValueError("RegionTree.Region.check_center found edge with undefined opposite side weight.")
-                elif opposite_weight >= midpoint_weight:
+                elif opposite_weight >= midpoint_weight + epsilon_buffer:
                     is_center = False
                 # print(f"Edge {edge.id_str} opposite weight {opposite_weight}, midpoint {midpoint_weight}, region weight {self.weight}")
 
             if is_center:
                 if self.validate_split_possible():
                     # TODO: Remove profiling
-                    old_region_size = self.region_tree.central_region.weight if self.region_tree.central_region is not None else None
-                    if old_region_size is not None:
-                        new_region_size = self.weight
+                    # old_region_size = self.region_tree.central_region.weight if self.region_tree.central_region is not None else None
+                    # if old_region_size is not None:
+                    #     new_region_size = self.weight
                         # print(f"Ratio: {old_region_size} -> {new_region_size} = {new_region_size / old_region_size:.4f}")
 
-                    self.region_tree.central_region = self
+                    # self.region_tree.target_regions.append(self)
+                    return True
                     # print("Region", self.id_str, "is central region of region tree", self.region_tree.id_str, "with", self.weight, "weight.")
-                else:
-                    self.region_tree.central_region = None
+                # else:
+                #     self.region_tree.central_regions = None
                     # print("Region", self.id_str, "is central, but a 2-split not possible.")
+            return False
 
         def validate_split_possible(self) -> bool:
             if len(self.cc_region_edges) == 0:
                 return True # No edges implies whole graph, which is splittable
 
-            graph_weight = self.region_tree.graph.total_primal_weight
-            midpoint_weight = graph_weight / 2
+            src_graph_weight = self.region_tree.total_weight
+            midpoint_weight = src_graph_weight / 2
+            epsilon_buffer = self.region_tree.epsilon * midpoint_weight
 
             trailing_idx = 0 # Inclusive
             leading_idx = 1 # Exclusive
             a_1_weight = self.cc_region_edges[0].get_opposite_side_weight(self)
             if a_1_weight is None:
                 raise ValueError("RegionTree.Region.validate_split_possible found edge with undefined opposite side weight.")
-            a_2_weight = graph_weight - self.weight - a_1_weight
+            a_2_weight = src_graph_weight - self.weight - a_1_weight
             
             while True:
-                if a_1_weight <= midpoint_weight and a_2_weight <= midpoint_weight:
+                if a_1_weight <= midpoint_weight + epsilon_buffer and a_2_weight <= midpoint_weight + epsilon_buffer:
                     return True
                 # Terminate when trailing has wrapped around or when leading has caught trailing
                 if trailing_idx == len(self.cc_region_edges) or (leading_idx > len(self.cc_region_edges) and leading_idx % len(self.cc_region_edges) == trailing_idx):
                     return False
                 
-                if a_1_weight > midpoint_weight:
+                if a_1_weight > midpoint_weight + epsilon_buffer:
                     # Move trailing forward
                     dropped_region_weight = self.cc_region_edges[trailing_idx % len(self.cc_region_edges)].get_opposite_side_weight(self)
                     if dropped_region_weight is None:
@@ -923,11 +926,11 @@ class RegionTree:
             self.ab_weight_differential = side_A_weight - side_B_weight
 
             # Check for edge center
-            if self.ab_weight_differential == 0:
-                if self.region_tree.edge_center is not None:
-                    raise ValueError("Cannot set edge as edge center, region tree already has edge center.")
+            if abs(self.ab_weight_differential) <= self.region_tree.epsilon * self.region_tree.total_weight: # 2 * self.region_tree.epsilon * (1/2) * self.region_tree.total_weight
+                # if len(self.region_tree.edge_centers) > 0:
+                #     raise ValueError("Cannot set edge as edge center, region tree already has edge center.")
 
-                self.region_tree.edge_center = self
+                self.region_tree.edge_centers.add(self)
                 # self.region_tree.central_region = None
                 # print("Edge", self.id_str, "is edge center of region tree", self.region_tree.id_str)
 
