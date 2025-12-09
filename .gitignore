@@ -4,3 +4,13 @@
 # Ignore Python bytecode
 __pycache__/
 *.pyc
+
+# Cython generated files
+*.c
+*.so
+build/
+
+# Benchmarking artifacts
+Benchmarking/*.csv
+Benchmarking/*.png
+Benchmarking/profile.stats

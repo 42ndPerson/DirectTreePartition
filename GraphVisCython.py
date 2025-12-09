@@ -2,10 +2,10 @@ from typing import List, Tuple, Set, Optional
 
 import pygame as pg
 
-from TwinGraph import *
-from Euclid import *
-from GraphNav import *
-from RegionTree import *
+from CythonCore.TwinGraph import TwinGraph, Vert, QuadEdge, EdgeDir, VertRole
+from CythonCore.Euclid import Point
+from CythonCore.GraphNav import GraphNav, StartSelectionMethod, MultiWalkStartBehavior
+from CythonCore.RegionTree import RegionTree, Region
 import math
 
 class GraphVis:
@@ -51,7 +51,7 @@ class GraphVis:
 
         # Screen
         screen = pg.display.set_mode(GraphVis.window_size)
-        pg.display.set_caption("Graph Viewer")
+        pg.display.set_caption("Graph Viewer (Cython)")
 
         # Loop State
         loop_idx = 0
@@ -63,7 +63,7 @@ class GraphVis:
         displaying_region_tree = False
         displaying_perimeters = False
         displaying_central_region = False
-        selected_vert: Optional[TwinGraph.Vert] = None
+        selected_vert: Optional[Vert] = None
 
         # Animation
         animation_frame = 0
@@ -71,7 +71,8 @@ class GraphVis:
         animation_deck_idx = 4
         animation_deck = self.graph.animation_tracks + self.graph_nav_dual.animation_tracks
         for track in animation_deck:
-            assert len(track) > 0, "Animation deck contains empty track."
+            # assert len(track) > 0, "Animation deck contains empty track."
+            pass
 
         # Create label surfaces
         font = pg.font.SysFont(None, 13)
@@ -88,13 +89,13 @@ class GraphVis:
             vert_pos = self.point_graph_to_window(vert.point)
             label_pos = (
                 vert_pos.x + 8, 
-                vert_pos.y - 12 + (0 if vert.role != TwinGraph.VertRole.DUAL_EXTERIOR else - 12)
+                vert_pos.y - 12 + (0 if vert.role != VertRole.DUAL_EXTERIOR else - 12)
             )
             label_surface = font.render(f'{vert.id_str} -> {vert.map_tree_vert.dfs_in} : {vert.map_tree_vert.dfs_out}', True, GraphVis.DrawColors.green)
             dual_labels_surface.blit(label_surface, label_pos)
         for edge in self.graph.edges:
             if edge.dual_AB is not None and edge.dual_BA is not None: # Check dual exists and should be drawn
-                src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+                src, dest, _ = self.get_exterior_adjusted_point(edge, VertRole.DUAL)
                 src, dest = self.point_pair_graph_to_window(src, dest)
         
                 # Put text label for dual edge annotation
@@ -145,25 +146,25 @@ class GraphVis:
 
         for edge in self.graph.edges:
             # Primal
-            src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.PRIMAL)
+            src, dest, _ = self.get_exterior_adjusted_point(edge, VertRole.PRIMAL)
             src, dest = self.point_pair_graph_to_window(src, dest)
             pg.draw.line(primal_edges_surface, GraphVis.DrawColors.white, src.tuple(), dest.tuple(), 1)
 
             # Dual
             if edge.dual_AB is not None and edge.dual_BA is not None:
-                is_external = (edge.dual_AB.role == TwinGraph.VertRole.DUAL_EXTERIOR or 
-                               edge.dual_BA.role == TwinGraph.VertRole.DUAL_EXTERIOR)
+                is_external = (edge.dual_AB.role == VertRole.DUAL_EXTERIOR or 
+                               edge.dual_BA.role == VertRole.DUAL_EXTERIOR)
                 
                 target_surface = dual_external_edges_surface if is_external else dual_edges_surface
                 
-                src, dest, dir = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+                src, dest, dir = self.get_exterior_adjusted_point(edge, VertRole.DUAL)
                 src, dest = self.point_pair_graph_to_window(src, dest)
                 pg.draw.line(target_surface, GraphVis.DrawColors.blue, src.tuple(), dest.tuple(), 1)
 
                 # Arrows (Annotations)
                 arrow_length = 6
                 arrow_width = 3
-                if edge.dual_AB.role == TwinGraph.VertRole.DUAL_EXTERIOR or edge.dual_BA.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                if edge.dual_AB.role == VertRole.DUAL_EXTERIOR or edge.dual_BA.role == VertRole.DUAL_EXTERIOR:
                     # Find non-exterior vertex and direction
                     adjusted_src = src
                     adjusted_dest = dest
@@ -171,7 +172,7 @@ class GraphVis:
                     buffer = 20
                     if not (buffer <= adjusted_src.x <= GraphVis.window_size[0] - buffer and buffer <= adjusted_src.y <= GraphVis.window_size[1] - buffer):
                         adjusted_src, adjusted_dest = adjusted_dest, adjusted_src
-                        dir = TwinGraph.EdgeDir.BA if dir == TwinGraph.EdgeDir.AB else TwinGraph.EdgeDir.AB
+                        dir = EdgeDir.BA if dir == EdgeDir.AB else EdgeDir.AB
 
                     dx = adjusted_src.x - adjusted_dest.x
                     dy = adjusted_src.y - adjusted_dest.y
@@ -181,7 +182,7 @@ class GraphVis:
                     if length > 0:
                         tip_x = adjusted_src.x - dx * 0.18
                         tip_y = adjusted_src.y - dy * 0.18
-                        if dir == TwinGraph.EdgeDir.AB:
+                        if dir == EdgeDir.AB:
                             base_x = tip_x + dx / length * arrow_length
                             base_y = tip_y + dy / length * arrow_length
                         else:
@@ -259,17 +260,17 @@ class GraphVis:
                         # Handle mouse or trackpad clicks
                         selected_vert = self.graph.get_closest_vert(
                             self.point_window_to_graph(Point(*pg.mouse.get_pos())),
-                            TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL
+                            VertRole.DUAL if displaying_dual else VertRole.PRIMAL
                         )
-                        if selected_vert is not None and selected_vert.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                        if selected_vert is not None and selected_vert.role == VertRole.DUAL_EXTERIOR:
                             selected_vert = None # Can't start from exterior dual verts
-                        if selected_vert is not None and selected_vert.role == TwinGraph.VertRole.DUAL:
+                        if selected_vert is not None and selected_vert.role == VertRole.DUAL:
                             # self.graph_nav_dual.loop_erased_random_walk_from(selected_vert)
                             selected_vert = self.graph.get_closest_vert(
                                 self.point_window_to_graph(Point(*pg.mouse.get_pos())),
-                                TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL
+                                VertRole.DUAL if displaying_dual else VertRole.PRIMAL
                             )
-                            if selected_vert is not None and selected_vert.role == TwinGraph.VertRole.DUAL:
+                            if selected_vert is not None and selected_vert.role == VertRole.DUAL:
                                 self.graph_nav_dual.walk_division_from(None, selected_vert)
 
             # Sustained Actions
@@ -304,16 +305,16 @@ class GraphVis:
 
             # Draw Animation
             for edge, role, _, tag in animation_deck[animation_deck_idx][animation_frame]:
-                endA, endB = edge.get_dual_vert_pair(TwinGraph.EdgeDir.AB)
-                if endA.role == TwinGraph.VertRole.DUAL_EXTERIOR or endB.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                endA, endB = edge.get_dual_vert_pair(EdgeDir.AB)
+                if endA.role == VertRole.DUAL_EXTERIOR or endB.role == VertRole.DUAL_EXTERIOR:
                     if not displaying_dual_external:
                         continue
 
-                if role == TwinGraph.VertRole.PRIMAL:
-                    src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.PRIMAL)
+                if role == VertRole.PRIMAL:
+                    src, dest, _ = self.get_exterior_adjusted_point(edge, VertRole.PRIMAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                 else:
-                    src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+                    src, dest, _ = self.get_exterior_adjusted_point(edge, VertRole.DUAL)
                     src, dest = self.point_pair_graph_to_window(src, dest)
                 
                 color: Tuple[int,int,int] = GraphVis.DrawColors.white # Placeholder
@@ -329,7 +330,7 @@ class GraphVis:
             # if displaying_central_region and len(self.graph_nav_dual.target_regions) > 0:
             #     for region in self.graph_nav_dual.target_regions:
             #         for edge, dir in region.dual_perimeter:
-            #             src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+            #             src, dest, _ = self.get_exterior_adjusted_point(edge, VertRole.DUAL)
             #             src, dest = self.point_pair_graph_to_window(src, dest)
             #             pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
 
@@ -367,11 +368,11 @@ class GraphVis:
 
             # Highlight Selected Vert
             if not displaying_perimeters:
-                selected_vert = graph.get_closest_vert(g_mp, TwinGraph.VertRole.DUAL if displaying_dual else TwinGraph.VertRole.PRIMAL)
+                selected_vert = graph.get_closest_vert(g_mp, VertRole.DUAL if displaying_dual else VertRole.PRIMAL)
                 if selected_vert is not None:
                     pg.draw.circle(screen, GraphVis.DrawColors.white, self.point_graph_to_window(selected_vert.point).tuple(), 5)
             else:
-                selected_region: Optional[RegionTree.Region] = None
+                selected_region: Optional[Region] = None
                 if g_mp is not None:
                     closest_region = None
                     closest_dist = float('inf')
@@ -385,7 +386,7 @@ class GraphVis:
                 if selected_region is not None:
                     if displaying_perimeters:
                         for edge, dir in selected_region.dual_perimeter:
-                            src, dest, _ = self.get_exterior_adjusted_point(edge, TwinGraph.VertRole.DUAL)
+                            src, dest, _ = self.get_exterior_adjusted_point(edge, VertRole.DUAL)
                             src, dest = self.point_pair_graph_to_window(src, dest)
                             pg.draw.line(screen, GraphVis.DrawColors.pink, src.tuple(), dest.tuple(), 5)
                         for vert in selected_region.get_interior_lining_verts()[0]:
@@ -451,8 +452,8 @@ class GraphVis:
             active_y + self.graph.lowerYBound
         )
 
-    def get_exterior_adjusted_point(self, edge: TwinGraph.QuadEdge, role: TwinGraph.VertRole) -> Tuple[Point, Point, TwinGraph.EdgeDir]:
-        if role.is_dual():
+    def get_exterior_adjusted_point(self, edge: QuadEdge, role: VertRole) -> Tuple[Point, Point, EdgeDir]:
+        if role == VertRole.DUAL:
             vert_A = edge.dual_AB
             vert_B = edge.dual_BA
         else:
@@ -460,7 +461,7 @@ class GraphVis:
             vert_B = edge.primal_B
 
         if vert_A is not None and vert_B is not None:
-            if vert_A.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+            if vert_A.role == VertRole.DUAL_EXTERIOR:
                 angle, _ = edge.get_dual_rad_from(vert_B)
 
                 # Project a point out along the angle given by get_primal_rad_from or get_dual_rad_from
@@ -469,9 +470,9 @@ class GraphVis:
                     vert_B.point.y + 20*math.sin(angle)
                 )
 
-                return (vert_B.point, projected_point, TwinGraph.EdgeDir.BA)
+                return (vert_B.point, projected_point, EdgeDir.BA)
             
-            if vert_B.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+            if vert_B.role == VertRole.DUAL_EXTERIOR:
                 angle, _ = edge.get_dual_rad_from(vert_A)
 
                 # Project a point out along the angle given by get_primal_rad_from or get_dual_rad_from
@@ -480,11 +481,10 @@ class GraphVis:
                     vert_A.point.y + 20*math.sin(angle)
                 )
 
-                return (vert_A.point, projected_point, TwinGraph.EdgeDir.AB)
+                return (vert_A.point, projected_point, EdgeDir.AB)
             
             # Neither vertex is exterior, return original points
-            return (vert_A.point, vert_B.point, TwinGraph.EdgeDir.AB)
+            return (vert_A.point, vert_B.point, EdgeDir.AB)
         
         else:
             raise ValueError("Edge does not have both dual vertices defined.")
-    

@@ -27,12 +27,14 @@ class TwinGraph:
         'idx_to_dfs_in_np',
         'idx_to_dfs_out_np',
         'animating',
-        'animation_tracks'
+        'animation_tracks',
+        'dual_verts_list'
     )
 
     primalVerts: Set[TwinGraph.Vert]
     total_primal_weight: int
     dualVerts: Set[TwinGraph.Vert]
+    dual_verts_list: List[TwinGraph.Vert] # Used for random selection
     external_dual_vert: TwinGraph.Vert
     edges: Set[TwinGraph.QuadEdge]
 
@@ -91,6 +93,7 @@ class TwinGraph:
 
         # Construct dual graph
         self.construct_dual()
+        self.dual_verts_list = list(self.dualVerts)
 
         # Construct map trees
         sys.setrecursionlimit(2*len(self.primalVerts)) # Increase recursion limit to allow deep recursions in large graphs

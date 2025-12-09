@@ -18,16 +18,33 @@ from Euclid import *
 
 from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
 
-versions = [
-    "GerryChain_Uniform", 
-    #"GerryChain_MST", 
-    "DirectPartition_Walk_Sample"]
+versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Walk_Sample"]
 exec_funcs = {
     "GerryChain_Uniform": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=True),
     "GerryChain_MST": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=False),
     "DirectPartition_Walk_Sample": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.WALK),
 }
-n_sizes = [256, 1024, 1764, 2500, 3136, 3844, 4624] # [256, 1296, 2500, 3600, 4624, 5776, 6724, 7744, 8836, 10000] # [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
+# Shapes: (width, height)
+# We aim for roughly 2500 nodes, with increasing aspect ratios.
+# Since epsilon is 0, we ensure even number of nodes.
+shapes = [
+    (50, 50),   # 2500, 1:1
+    (36, 70),   # 2520, 1:2
+    (25, 100),  # 2500, 1:4
+    (18, 140),  # 2520, 1:8
+    (12, 208),  # 2496, 1:16
+    (9, 280),   # 2520, 1:31
+    (6, 416),   # 2496, 1:69
+    (4, 625)    # 2500, 1:156
+]
+# Pre-process shapes to ensure even node count
+adjusted_shapes = []
+for w, h in shapes:
+    if (w * h) % 2 != 0:
+        h += 1
+    adjusted_shapes.append((w, h))
+shapes = adjusted_shapes
+
 reps = 1000
 
 def perform_gerrychain_find(graph: Graph, use_uniform: bool):
@@ -47,7 +64,7 @@ def perform_direct_find(data: TwinGraph, start_selection_method: GraphNav.StartS
     loops = []
     idx = 0
     graph_nav = None
-    while len(loops) == 0:
+    while not loops:
         region_tree = RegionTree(data)
         graph_nav = GraphNav(data, region_tree, start_selection_method=start_selection_method)
         graph_nav.animating = False
@@ -63,14 +80,10 @@ def perform_direct_find(data: TwinGraph, start_selection_method: GraphNav.StartS
     partition_1 = graph_nav.get_enclosed_primal_verts(loops[0])
     partition_2 = set(data.primalVerts) - partition_1
 
-def generate_n_grid_graphs(n: int) -> Tuple[Graph, TwinGraph]:
-    # Validate input
-    assert sqrt(n).is_integer(), "n must be a perfect square for grid graph generation."
-    dim_n = int(sqrt(n))  # Ensure even dimensions
-
+def generate_rect_grid_graphs(w: int, h: int) -> Tuple[Graph, TwinGraph]:
     # Generate Graph Source
-    print(f"Generating TwinGraph for n={dim_n*dim_n} (dim={dim_n}x{dim_n})")
-    points, weights, adjacencies = generate_grid_graph(dim_n, dim_n)
+    print(f"Generating TwinGraph for {w}x{h} (n={w*h})")
+    points, weights, adjacencies = generate_grid_graph(w, h)
 
     # Create GerryChain graph
     gerrychain_graph = Graph(adjacencies)
@@ -88,10 +101,11 @@ def bench():
     with keep.running(): # Prevent sleep during benchmarking
         print("\n--- Starting Benchmarking ---\n")
         # Set up DF
-        column_tuples = [(v, n) for v in versions for n in n_sizes]
+        shape_strs = [f"{w}x{h}" for w, h in shapes]
+        column_tuples = [(v, s) for v in versions for s in shape_strs]
         column_index = pd.MultiIndex.from_tuples(
             column_tuples,
-            names=['version', 'n_size']
+            names=['version', 'shape']
         )
 
         # Index run number
@@ -105,12 +119,13 @@ def bench():
             columns=column_index
         )
 
-        for n in n_sizes:
-            gerrychain_graph, twin_graph = generate_n_grid_graphs(n)
+        for w, h in shapes:
+            shape_str = f"{w}x{h}"
+            gerrychain_graph, twin_graph = generate_rect_grid_graphs(w, h)
             graphs = (gerrychain_graph, twin_graph)
 
             for version in versions:
-                print(f"Benchmarking {version} for n={n} over {reps} reps...")
+                print(f"Benchmarking {version} for {shape_str} over {reps} reps...")
                 exec_func = exec_funcs[version]
 
                 run_results = timeit.repeat(
@@ -119,14 +134,14 @@ def bench():
                     repeat=reps,
                     number=1 # Acceptable to eat overhead since slowest runs > ~0.01s
                 )
-                df[(version, n)] = run_results
+                df[(version, shape_str)] = run_results
 
                 avg_time = sum(run_results) / reps
                 print(f"    Average Time: {avg_time:.6f} seconds")
         
             # Save results
-            df.to_csv("benchmarking_results_gebp_ABTEST.csv")
-            print("Saved benchmarking results to benchmarking_results_gebp_ABTEST.csv")
+            df.to_csv("benchmarking_results_rgebp.csv")
+            print("Saved benchmarking results to benchmarking_results_rgebp.csv")
 
         print("\n--- Benchmarking Results ---")
         print(df.describe().T)

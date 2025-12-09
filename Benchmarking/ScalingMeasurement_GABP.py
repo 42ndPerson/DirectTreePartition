@@ -18,10 +18,7 @@ from Euclid import *
 
 from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
 
-versions = [
-    "GerryChain_Uniform", 
-    #"GerryChain_MST", 
-    "DirectPartition_Walk_Sample"]
+versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Walk_Sample"]
 exec_funcs = {
     "GerryChain_Uniform": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=True),
     "GerryChain_MST": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=False),
@@ -29,6 +26,13 @@ exec_funcs = {
 }
 n_sizes = [256, 1024, 1764, 2500, 3136, 3844, 4624] # [256, 1296, 2500, 3600, 4624, 5776, 6724, 7744, 8836, 10000] # [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
 reps = 1000
+
+# Note on Epsilon:
+# GerryChain defines epsilon as the allowable deviation from the target population (pop_target).
+#  Range: [target * (1 - epsilon), target * (1 + epsilon)]
+# RegionTree defines epsilon as the allowable deviation from the midpoint weight (total_weight / 2).
+#  Range: [midpoint * (1 - epsilon), midpoint * (1 + epsilon)]
+# Since pop_target = total_weight / 2 (for even total weight), these definitions are equivalent.
 
 def perform_gerrychain_find(graph: Graph, use_uniform: bool):
     if use_uniform:
@@ -39,7 +43,7 @@ def perform_gerrychain_find(graph: Graph, use_uniform: bool):
         graph=graph,
         pop_target=len(graph.nodes) // 2,
         pop_col='population',
-        epsilon=0,
+        epsilon=0.05,
         spanning_tree_fn=spanning_tree_fn
     )
 
@@ -47,8 +51,8 @@ def perform_direct_find(data: TwinGraph, start_selection_method: GraphNav.StartS
     loops = []
     idx = 0
     graph_nav = None
-    while len(loops) == 0:
-        region_tree = RegionTree(data)
+    while not loops:
+        region_tree = RegionTree(data, epsilon=0.05)
         graph_nav = GraphNav(data, region_tree, start_selection_method=start_selection_method)
         graph_nav.animating = False
 
@@ -125,8 +129,8 @@ def bench():
                 print(f"    Average Time: {avg_time:.6f} seconds")
         
             # Save results
-            df.to_csv("benchmarking_results_gebp_ABTEST.csv")
-            print("Saved benchmarking results to benchmarking_results_gebp_ABTEST.csv")
+            df.to_csv("benchmarking_results_gabp.csv")
+            print("Saved benchmarking results to benchmarking_results_gabp.csv")
 
         print("\n--- Benchmarking Results ---")
         print(df.describe().T)

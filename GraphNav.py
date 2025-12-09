@@ -1,7 +1,7 @@
 from __future__ import annotations
 from functools import reduce
 from operator import add
-from typing import List, Tuple, Set, Optional
+from typing import List, Tuple, Set, Optional, Dict
 from collections import deque
 
 import random # TODO: Confirm pseudo-randomness is acceptable
@@ -20,6 +20,7 @@ class GraphNav:
         'start_selection_method', 
         'multi_walk_start_behavior', 
         'multi_walk_attempts',
+        'unwind_loops',
         'animating', 
         'animation_tracks'
     )
@@ -37,6 +38,7 @@ class GraphNav:
     start_selection_method: StartSelectionMethod
     multi_walk_start_behavior: MultiWalkStartBehavior
     multi_walk_attempts: int
+    unwind_loops: bool
 
     animating: bool
     animation_tracks: List[List[List[Tuple[TwinGraph.QuadEdge, TwinGraph.VertRole, TwinGraph.EdgeDir, int]]]]
@@ -57,7 +59,8 @@ class GraphNav:
             region_tree: RegionTree, 
             start_selection_method: StartSelectionMethod = StartSelectionMethod.WALK,
             multi_walk_start_behavior: MultiWalkStartBehavior = MultiWalkStartBehavior.HIT_POINT,
-            multi_walk_attempts: int = 5
+            multi_walk_attempts: int = 5,
+            unwind_loops: bool = False
             ) -> None:
         self.graph = graph
         self.region_tree = region_tree
@@ -70,6 +73,7 @@ class GraphNav:
         self.start_selection_method = start_selection_method
         self.multi_walk_start_behavior = multi_walk_start_behavior
         self.multi_walk_attempts = multi_walk_attempts
+        self.unwind_loops = unwind_loops
 
         self.animating = True
         self.animation_tracks = [[[]], [[]]] # One track for walk, one for region finding
@@ -99,7 +103,7 @@ class GraphNav:
             new_target_regions = self.walk_division_from(target_region, origin_vert)
             self.target_regions.extend(new_target_regions)
 
-        print("Edge centers found:", len(self.region_tree.edge_centers))
+        # print("Edge centers found:", len(self.region_tree.edge_centers))
             
         if len(self.region_tree.edge_centers) > 0:
             loops = []
@@ -128,7 +132,7 @@ class GraphNav:
 
                 loops.append(loop)
 
-            print("Loops found:", len(loops))
+            # print("Loops found:", len(loops))
             return loops
         else:
             return []
@@ -157,7 +161,7 @@ class GraphNav:
         consumed_verts: Set[TwinGraph.Vert] = set()
         new_target_regions: Set[RegionTree.Region] = set()
         start_vert = origin_vert # Optionally allows restarting from hit point instead of origin point
-        for i in range(self.multi_walk_attempts): # Walk multiple times for a more likely successful division
+        for i in range(min(self.multi_walk_attempts, 2*region.weight)): # Walk multiple times for a more likely successful division, 2*weight caps gross inefficiency on tiny regions with high multi_walk_attempts
             new_walk_edges, new_consumed_verts, termination_vert = self.loop_erased_random_walk_from(start_vert, walk_edges, consumed_verts, region)
             if self.multi_walk_start_behavior == GraphNav.MultiWalkStartBehavior.HIT_POINT:
                 if termination_vert not in self.tree_verts and termination_vert.role != TwinGraph.VertRole.DUAL_EXTERIOR:
@@ -260,6 +264,141 @@ class GraphNav:
         return enclosed
 
     def loop_erased_random_walk_from(
+            self, 
+            vert: TwinGraph.Vert,
+            existing_walk_edges: List[TwinGraph.QuadEdge],
+            existing_consumed_verts: Set[TwinGraph.Vert],
+            region: RegionTree.Region
+        ) -> Tuple[List[TwinGraph.QuadEdge], Set[TwinGraph.Vert], TwinGraph.Vert]:
+        if self.unwind_loops:
+            return self._loop_erased_random_walk_from_unwind(vert, existing_walk_edges, existing_consumed_verts, region)
+        else:
+            return self._loop_erased_random_walk_from_lazy(vert, existing_walk_edges, existing_consumed_verts, region)
+
+    def _loop_erased_random_walk_from_lazy(
+            self, 
+            vert: TwinGraph.Vert,
+            existing_walk_edges: List[TwinGraph.QuadEdge],
+            existing_consumed_verts: Set[TwinGraph.Vert],
+            region: RegionTree.Region
+        ) -> Tuple[List[TwinGraph.QuadEdge], Set[TwinGraph.Vert], TwinGraph.Vert]:
+        assert vert not in self.tree_verts, "Starting vert is already in tree."
+        # print("Starting loop-erased random walk from vert", vert.id_str)
+
+        # Confirm vert is dual
+        if not vert.role.is_dual():
+            raise ValueError("Starting vert role does not match graph_selection.")
+
+        # Walk state
+        current_vert: TwinGraph.Vert = vert
+        next_step: Dict[TwinGraph.Vert, TwinGraph.QuadEdge] = {}
+        termination_vert: Optional[TwinGraph.Vert] = None
+        escaped_existing_walk = False
+
+        while True:
+            # Pick next edge
+            current_edge = current_vert.cc_edges[random.randint(0, len(current_vert.cc_edges)-1)]
+            next_vert, _ = current_edge.get_dual_dest_from(current_vert)
+            
+            # Record step (overwriting any previous step from current_vert to erase loops)
+            next_step[current_vert] = current_edge
+
+            # Check termination conditions
+            if next_vert in self.tree_verts:
+                termination_vert = next_vert
+                break
+            
+            if escaped_existing_walk and next_vert in existing_consumed_verts:
+                termination_vert = next_vert
+                break
+            
+            if next_vert.role == TwinGraph.VertRole.DUAL_EXTERIOR:
+                termination_vert = next_vert
+                break
+
+            if ((current_edge.dual_AB is not None and current_edge.dual_AB.role == TwinGraph.VertRole.DUAL_EXTERIOR) or 
+                (current_edge.dual_BA is not None and current_edge.dual_BA.role == TwinGraph.VertRole.DUAL_EXTERIOR)):
+                termination_vert = next_vert
+                break
+
+            # Update escaped state
+            if not escaped_existing_walk:
+                if current_vert not in existing_consumed_verts and next_vert not in existing_consumed_verts:
+                    escaped_existing_walk = True
+
+            # Move to next vert
+            current_vert = next_vert
+
+            # Animation tracking
+            if self.animating:
+                temp_walk_edges = []
+                temp_curr = vert
+                temp_escaped = False
+                
+                # Trace current path from start to current position
+                trace_steps = 0
+                max_steps = len(next_step) + 2 
+                
+                while temp_curr != current_vert and trace_steps < max_steps:
+                    if temp_curr not in next_step:
+                        break
+                    edge = next_step[temp_curr]
+                    next_v, _ = edge.get_dual_dest_from(temp_curr)
+                    
+                    if not temp_escaped:
+                        if temp_curr not in existing_consumed_verts and next_v not in existing_consumed_verts:
+                            temp_escaped = True
+                    
+                    if temp_escaped:
+                        temp_walk_edges.append(edge)
+                    
+                    temp_curr = next_v
+                    trace_steps += 1
+
+                # Convert walk_edges to the expected tuple format
+                perimeter_edges = set()
+                perimeter_edges.update(region.dual_perimeter_edges)
+                walk_tuples = [
+                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0 if edge not in perimeter_edges else 2)
+                    for edge in temp_walk_edges + existing_walk_edges
+                ]
+                tree_tuples = [
+                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 0 if edge not in perimeter_edges else 2)
+                    for edge in self.tree_edges
+                ]
+                self.animation_tracks[0].append(walk_tuples + tree_tuples)
+                
+                # Draw bridges
+                self.animation_tracks[0][-1].extend([
+                    (edge, TwinGraph.VertRole.DUAL, TwinGraph.EdgeDir.AB, 1)
+                    for edge in self.bridge_edges
+                ])
+
+        # Reconstruct path
+        walk_edges: List[TwinGraph.QuadEdge] = []
+        consumed_verts: Set[TwinGraph.Vert] = set()
+        
+        curr = vert
+        reconstruct_escaped = False
+        
+        while curr != termination_vert:
+            edge = next_step[curr]
+            next_v, _ = edge.get_dual_dest_from(curr)
+            
+            if not reconstruct_escaped:
+                if curr not in existing_consumed_verts and next_v not in existing_consumed_verts:
+                    reconstruct_escaped = True
+            
+            if reconstruct_escaped:
+                walk_edges.append(edge)
+                consumed_verts.add(curr)
+                consumed_verts.add(next_v)
+            
+            curr = next_v
+
+        return walk_edges, consumed_verts, termination_vert
+
+    def _loop_erased_random_walk_from_unwind(
             self, 
             vert: TwinGraph.Vert,
             existing_walk_edges: List[TwinGraph.QuadEdge],

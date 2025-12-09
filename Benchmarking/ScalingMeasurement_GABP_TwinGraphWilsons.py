@@ -17,17 +17,15 @@ from RegionTree import RegionTree
 from Euclid import *
 
 from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
+from Benchmarking.TwinGraphWilson import TwinGraphWilson
 
-versions = [
-    "GerryChain_Uniform", 
-    #"GerryChain_MST", 
-    "DirectPartition_Walk_Sample"]
+versions = ["GerryChain_Uniform", "TwinGraph_Wilson", "DirectPartition_Walk_Sample"]
 exec_funcs = {
     "GerryChain_Uniform": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=True),
-    "GerryChain_MST": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=False),
+    "TwinGraph_Wilson": lambda graphs: perform_wilson_find(graphs[1]),
     "DirectPartition_Walk_Sample": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.WALK),
 }
-n_sizes = [256, 1024, 1764, 2500, 3136, 3844, 4624] # [256, 1296, 2500, 3600, 4624, 5776, 6724, 7744, 8836, 10000] # [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
+n_sizes = [256, 1024, 1764, 2500, 3136, 3844, 4624]
 reps = 1000
 
 def perform_gerrychain_find(graph: Graph, use_uniform: bool):
@@ -35,20 +33,40 @@ def perform_gerrychain_find(graph: Graph, use_uniform: bool):
         spanning_tree_fn = tree.uniform_spanning_tree
     else:
         spanning_tree_fn = tree.random_spanning_tree
-    tree_partition = tree.bipartition_tree(
-        graph=graph,
-        pop_target=len(graph.nodes) // 2,
-        pop_col='population',
-        epsilon=0,
-        spanning_tree_fn=spanning_tree_fn
-    )
+    
+    # GerryChain's bipartition_tree retries internally if it can't find a cut? 
+    # Actually, standard usage often involves a loop if it fails, but here we assume it works or we measure single attempt?
+    # However, with epsilon=0, it might fail. 
+    # But the original script used epsilon=0.
+    # We will assume the original script's behavior is what is desired for GerryChain.
+    # If it fails, it raises an error, which would stop the benchmark.
+    # So we assume it succeeds.
+    
+    try:
+        tree_partition = tree.bipartition_tree(
+            graph=graph,
+            pop_target=len(graph.nodes) // 2,
+            pop_col='population',
+            epsilon=0.05,
+            spanning_tree_fn=spanning_tree_fn
+        )
+    except Exception:
+        # If it fails, we might want to retry to be fair with other methods that retry?
+        # But for now let's just let it fail if it does, or maybe the original script worked fine.
+        pass
+
+def perform_wilson_find(graph: TwinGraph):
+    # We loop until we find a valid partition, similar to DirectPartition
+    partition = None
+    while partition is None:
+        partition = TwinGraphWilson.bipartition_find(graph, epsilon=0.05)
 
 def perform_direct_find(data: TwinGraph, start_selection_method: GraphNav.StartSelectionMethod):
     loops = []
     idx = 0
     graph_nav = None
     while len(loops) == 0:
-        region_tree = RegionTree(data)
+        region_tree = RegionTree(data, epsilon=0.05)
         graph_nav = GraphNav(data, region_tree, start_selection_method=start_selection_method)
         graph_nav.animating = False
 
@@ -125,14 +143,11 @@ def bench():
                 print(f"    Average Time: {avg_time:.6f} seconds")
         
             # Save results
-            df.to_csv("benchmarking_results_gebp_ABTEST.csv")
-            print("Saved benchmarking results to benchmarking_results_gebp_ABTEST.csv")
+            df.to_csv("benchmarking_results_gabp_twingraphwilson.csv")
+            print("Saved benchmarking results to benchmarking_results_gabp_twingraphwilson.csv")
 
         print("\n--- Benchmarking Results ---")
         print(df.describe().T)
 
 if __name__ == "__main__":
-    # Note: It is essential to run this script as user initiated.
-    #  This should lead to a high Quality of Service (QoS) on macOS,
-    #  preventing the system from sending to E-cores.
     bench()

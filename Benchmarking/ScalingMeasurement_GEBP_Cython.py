@@ -5,27 +5,25 @@ sys.path.append(parent_dir)
 from math import sqrt, ceil
 import time
 import timeit
+from typing import List, Tuple, Set, Optional
 
 from wakepy import keep
 import pandas as pd
 import numpy as np
 from gerrychain import Graph, tree
 
-from TwinGraph import TwinGraph
-from GraphNav import GraphNav
-from RegionTree import RegionTree
-from Euclid import *
+from CythonCore.TwinGraph import TwinGraph
+from CythonCore.GraphNav import GraphNav, StartSelectionMethod
+from CythonCore.RegionTree import RegionTree
+from CythonCore.Euclid import Point
 
 from Benchmarking.GenerateGridGraphAjacencies import generate_grid_graph
 
-versions = [
-    "GerryChain_Uniform", 
-    #"GerryChain_MST", 
-    "DirectPartition_Walk_Sample"]
+versions = ["GerryChain_Uniform", "GerryChain_MST", "DirectPartition_Walk_Sample"]
 exec_funcs = {
     "GerryChain_Uniform": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=True),
     "GerryChain_MST": lambda graphs: perform_gerrychain_find(graphs[0], use_uniform=False),
-    "DirectPartition_Walk_Sample": lambda graphs: perform_direct_find(graphs[1], start_selection_method=GraphNav.StartSelectionMethod.WALK),
+    "DirectPartition_Walk_Sample": lambda graphs: perform_direct_find(graphs[1], start_selection_method=StartSelectionMethod.WALK),
 }
 n_sizes = [256, 1024, 1764, 2500, 3136, 3844, 4624] # [256, 1296, 2500, 3600, 4624, 5776, 6724, 7744, 8836, 10000] # [256, 1600, 3136, 4624, 5776, 7396, 8836, 10000, 11664, 12996] # [256, 12996, 26244, 39204, 51984, 65536, 78400, 91204, 103684, 116964]
 reps = 1000
@@ -43,7 +41,7 @@ def perform_gerrychain_find(graph: Graph, use_uniform: bool):
         spanning_tree_fn=spanning_tree_fn
     )
 
-def perform_direct_find(data: TwinGraph, start_selection_method: GraphNav.StartSelectionMethod):
+def perform_direct_find(data: TwinGraph, start_selection_method: StartSelectionMethod):
     loops = []
     idx = 0
     graph_nav = None
@@ -78,7 +76,9 @@ def generate_n_grid_graphs(n: int) -> Tuple[Graph, TwinGraph]:
         gerrychain_graph.nodes[n]['population'] = 1
 
     # Generate TwinGraph Source
-    twin_graph = TwinGraph(points, weights, adjacencies)
+    # Convert points to CythonCore.Euclid.Point objects
+    cython_points = [Point(p.x, p.y) for p in points]
+    twin_graph = TwinGraph(cython_points, weights, adjacencies)
     twin_graph.animating = False
 
     return gerrychain_graph, twin_graph
@@ -86,7 +86,7 @@ def generate_n_grid_graphs(n: int) -> Tuple[Graph, TwinGraph]:
 # @keep.running
 def bench():
     with keep.running(): # Prevent sleep during benchmarking
-        print("\n--- Starting Benchmarking ---\n")
+        print("\n--- Starting Benchmarking (Cython) ---\n")
         # Set up DF
         column_tuples = [(v, n) for v in versions for n in n_sizes]
         column_index = pd.MultiIndex.from_tuples(
@@ -125,8 +125,8 @@ def bench():
                 print(f"    Average Time: {avg_time:.6f} seconds")
         
             # Save results
-            df.to_csv("benchmarking_results_gebp_ABTEST.csv")
-            print("Saved benchmarking results to benchmarking_results_gebp_ABTEST.csv")
+            df.to_csv("benchmarking_results_cython.csv")
+            print("Saved benchmarking results to benchmarking_results_cython.csv")
 
         print("\n--- Benchmarking Results ---")
         print(df.describe().T)

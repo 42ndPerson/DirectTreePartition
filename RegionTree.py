@@ -248,7 +248,7 @@ class RegionTree:
         # Interior lining verts and the non-sorting parts of build_perimeter_table are the bottlenecks
         def get_uniform_interior_vert(self) -> Optional[TwinGraph.Vert]:
             if len(self.dual_perimeter) == 0:
-                return random.choice(list(self.region_tree.graph.dualVerts))
+                return random.choice(self.region_tree.graph.dual_verts_list)
 
             # Use simple integer tags instead of Enum for performance: 0=PERIMETER, 1=LINING
             PERIMETER = 0
@@ -483,194 +483,6 @@ class RegionTree:
 
             return _traverse_to_interior(entry_vert, dfs_target_idx)
         
-        def get_uniform_interior_vert_np(self) -> Optional[TwinGraph.Vert]:
-            """Hybrid NumPy implementation of uniform interior vert selection.
-
-            Semantics match get_uniform_interior_vert exactly:
-            - Builds boundary event table in four ordered blocks (perim in, perim out, lining in, lining out)
-            - Stable sorting on dfs_index preserves tie ordering from build blocks
-            - Interior path pair construction rules identical (lining-lining, lining-perimeter, final perimeter-lining case)
-            - Consolidation of adjacent ranges where trailing_start == leading_end
-            - Weight counting uses (end - start + 1) inclusive logic
-            - Random checkpoint chosen uniformly in total interior index measure
-            - Traversal identical: navigate map tree by dfs_in/out containment until hitting target index
-
-            Hybrid approach: boundary table dfs values, types, and vert indices stored in NumPy arrays for fast sorting,
-            but range consolidation & traversal kept in Python for clarity and minimal overhead at typical region sizes.
-            Falls back to original method if NumPy dfs arrays are unavailable.
-            """
-            # Fallback on missing perimeter (whole graph) or absent NumPy arrays
-            if len(self.dual_perimeter) == 0:
-                return random.choice(list(self.region_tree.graph.dualVerts))
-
-            graph = self.region_tree.graph
-            dfs_in_np = getattr(graph, 'idx_to_dfs_in_np', None)
-            dfs_out_np = getattr(graph, 'idx_to_dfs_out_np', None)
-            dual_list = getattr(graph, 'dualVerts', None)
-            if dfs_in_np is None or dfs_out_np is None or dual_list is None:
-                return self.get_uniform_interior_vert()  # NumPy data unavailable, use legacy path
-
-            # Tags: 0 = PERIMETER, 1 = LINING (match original int tags)
-            PERIMETER = 0
-            LINING = 1
-
-            lining_verts, perimeter_verts = self.get_interior_lining_verts()
-            if len(lining_verts) == 0:
-                return None  # No interior verts available
-
-            # Build index arrays for perimeter and lining vert indices
-            # Note: Order of iteration over sets matches original (arbitrary set order) -> preserved via stable sort
-            pv_idx = np.fromiter((v.index for v in perimeter_verts), dtype=np.int32, count=len(perimeter_verts))
-            lv_idx = np.fromiter((v.index for v in lining_verts), dtype=np.int32, count=len(lining_verts))
-
-            # Boundary dfs indices in block order matching original builder
-            boundary_dfs = np.concatenate([
-                dfs_in_np[pv_idx],
-                dfs_out_np[pv_idx],
-                dfs_in_np[lv_idx],
-                dfs_out_np[lv_idx]
-            ])
-
-            # Boundary types aligned with blocks (stable ordering preserved by mergesort argsort)
-            boundary_type = np.concatenate([
-                np.zeros(len(pv_idx), dtype=np.int8),  # perim in
-                np.zeros(len(pv_idx), dtype=np.int8),  # perim out
-                np.ones(len(lv_idx), dtype=np.int8),   # lining in
-                np.ones(len(lv_idx), dtype=np.int8)    # lining out
-            ])
-
-            # Vert indices (two events per vertex: in/out)
-            vert_indices = np.concatenate([
-                pv_idx,
-                pv_idx,
-                lv_idx,
-                lv_idx
-            ])
-
-            # Stable sort by dfs index to group path crossings; mergesort guarantees stability
-            order = np.argsort(boundary_dfs, kind='mergesort')
-            boundary_dfs = boundary_dfs[order]
-            boundary_type = boundary_type[order]
-            vert_indices = vert_indices[order]
-
-            n = boundary_dfs.size
-            if n == 0:
-                return None
-
-            # Vectorized detection of candidate pairs (interior path intervals)
-            # Pair types:
-            #   lining-lining -> (start_i, end_{i+1})
-            #   lining-perimeter -> single vertex interval (start_i, start_i)
-            # Final special case: perimeter-lining at end -> single vertex interval
-            leading_type = boundary_type[:-1]
-            trailing_type = boundary_type[1:]
-            leading_dfs = boundary_dfs[:-1]
-            trailing_dfs = boundary_dfs[1:]
-
-            lining_lining_mask = (leading_type == LINING) & (trailing_type == LINING)
-            lining_perim_mask = (leading_type == LINING) & (trailing_type == PERIMETER)
-
-            # Collect starts/ends and positions of leading elements
-            pair_starts = []  # dfs index of leading event
-            pair_ends = []    # dfs index of trailing event (or same for single)
-            leading_positions = []  # array index of leading event (for entry vert retrieval)
-
-            # Lining-lining intervals
-            ll_indices = np.nonzero(lining_lining_mask)[0]
-            for i in ll_indices:
-                pair_starts.append(leading_dfs[i])
-                pair_ends.append(trailing_dfs[i])
-                leading_positions.append(i)
-
-            # Lining-perimeter singletons
-            lp_indices = np.nonzero(lining_perim_mask)[0]
-            for i in lp_indices:
-                pair_starts.append(leading_dfs[i])
-                pair_ends.append(leading_dfs[i])  # single vertex interval
-                leading_positions.append(i)
-
-            # Final perimeter-lining singleton case
-            if n >= 2 and boundary_type[-2] == PERIMETER and boundary_type[-1] == LINING:
-                pair_starts.append(boundary_dfs[-1])
-                pair_ends.append(boundary_dfs[-1])
-                leading_positions.append(n - 1)
-
-            if len(pair_starts) == 0:
-                return None  # No interior verts available
-
-            # Consolidate adjacent intervals where start of next equals end of current
-            consolidated = []  # list of (start_dfs, end_dfs, leading_pos)
-            cursor_start = pair_starts[0]
-            cursor_end = pair_ends[0]
-            cursor_lead_pos = leading_positions[0]
-            double_weight = 0
-            for s, e, lp in zip(pair_starts[1:], pair_ends[1:], leading_positions[1:]):
-                if s == cursor_end:  # adjacency -> extend range
-                    cursor_end = e
-                else:
-                    consolidated.append((cursor_start, cursor_end, cursor_lead_pos))
-                    double_weight += (cursor_end - cursor_start + 1)
-                    cursor_start, cursor_end, cursor_lead_pos = s, e, lp
-            # Final interval
-            consolidated.append((cursor_start, cursor_end, cursor_lead_pos))
-            double_weight += (cursor_end - cursor_start + 1)
-
-            if double_weight == 0:
-                return None
-
-            # Select checkpoint uniformly across inclusive dfs index measure
-            checkpoint = random.randint(0, double_weight - 1)
-
-            # Locate interval containing checkpoint
-            logical_covered = 0
-            entry_vert_index = None
-            dfs_target = None
-            for start_dfs, end_dfs, lead_pos in consolidated:
-                span = end_dfs - start_dfs + 1
-                if logical_covered + span > checkpoint:
-                    offset = checkpoint - logical_covered
-                    dfs_target = start_dfs + offset
-                    entry_vert_index = vert_indices[lead_pos]
-                    break
-                logical_covered += span
-
-            if dfs_target is None or entry_vert_index is None:
-                raise ValueError("RegionTree.Region.get_uniform_interior_vert_np could not locate dfs target or entry vert.")
-
-            # dual_list is a set (unordered, non-subscriptable). Provide cached index->vertex map.
-            # TwinGraph uses __slots__, so we cannot attach a new attribute to cache.
-            # Build a local mapping (cost negligible compared to perimeter table construction).
-            vert_lookup = {}
-            for v in dual_list:  # unique indices assumed
-                vert_lookup[v.index] = v
-            entry_vert = vert_lookup.get(entry_vert_index)
-            if entry_vert is None:
-                raise ValueError(
-                    f"RegionTree.Region.get_uniform_interior_vert_np could not resolve vertex index {entry_vert_index} among {len(vert_lookup)} dual verts."
-                )
-
-            # Traversal identical to original logic
-            def _traverse(entry_vert: TwinGraph.Vert, dfs_target_idx: int) -> TwinGraph.Vert:
-                current_vert = entry_vert.map_tree_vert
-                while True:
-                    if current_vert.dfs_in == dfs_target_idx or current_vert.dfs_out == dfs_target_idx:
-                        break
-                    contains = current_vert.dfs_in <= dfs_target_idx <= current_vert.dfs_out
-                    if contains:
-                        if len(current_vert.out_edges) == 0:
-                            raise ValueError("RegionTree.Region.get_uniform_interior_vert_np could not go down from leaf.")
-                        for edge in current_vert.out_edges:
-                            next_vert = edge.get_dest_from(current_vert)
-                            if next_vert.dfs_in <= dfs_target_idx <= next_vert.dfs_out:
-                                current_vert = next_vert
-                                break
-                    else:
-                        if current_vert.in_edge is None:
-                            raise ValueError("RegionTree.Region.get_uniform_interior_vert_np could not go up from root.")
-                        current_vert = current_vert.in_edge.get_dest_from(current_vert)
-                return current_vert.twin_vert
-
-            return _traverse(entry_vert, dfs_target)
 
         def get_central_region_vert(self) -> Optional[TwinGraph.Vert]:
             """
@@ -694,13 +506,11 @@ class RegionTree:
             return dual_vert
 
         def get_walk_random_interior_vert(self, steps: int = 100) -> Optional[TwinGraph.Vert]:
-            # Special case: no perimeter means whole-graph; perform an unrestricted walk
-            if len(self.dual_perimeter) == 0:
-                vert = random.choice(list(self.region_tree.graph.dualVerts))
-                return vert
-
             # Build perimeter vertex set to avoid stepping onto boundary
-            perimeter_verts = self.get_perimeter_verts()
+            if len(self.dual_perimeter) == 0:
+                perimeter_verts = {self.region_tree.graph.external_dual_vert}
+            else:
+                perimeter_verts = self.get_perimeter_verts()
 
             # Helpers ------------------------------------------------------
             def _find_interior_start_vert() -> Optional[TwinGraph.Vert]:
@@ -760,7 +570,14 @@ class RegionTree:
 
             # Execution ------------------------------------------------------
             
-            src_vert: Optional[TwinGraph.Vert] = _find_interior_start_vert()
+            if len(self.dual_perimeter) == 0:
+                ext = self.region_tree.graph.external_dual_vert
+                if len(ext.cc_edges) == 0:
+                    return None
+                edge = random.choice(ext.cc_edges)
+                src_vert, _ = edge.get_dual_dest_from(ext)
+            else:
+                src_vert = _find_interior_start_vert()
 
             if src_vert is None:
                 return None
