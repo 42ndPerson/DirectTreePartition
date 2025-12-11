@@ -1,4 +1,4 @@
-### Information on Dual Graph Provided
+### Information on Dual Graphs Provided
 
 All these graphs are connected and planar: 
 
